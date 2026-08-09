@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "782817829642",
+    "project_id": "naqi-9f4ba",
+    "storage_bucket": "naqi-9f4ba.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:782817829642:android:af61837afc46b12c3690f3",
+        "android_client_info": {
+          "package_name": "com.naqiapp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCIEC5if9OzPwORZpc2n9lCYDLyFtS7Qn8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

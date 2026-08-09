@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">NAQI</string>
+    <!-- facebook_app_id and facebook_client_token are now generated from build.gradle using environment variables -->
+</resources>

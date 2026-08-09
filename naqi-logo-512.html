@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NAQI Logo - 512x512</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            background-color: #f0f0f0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            font-family: Arial, sans-serif;
+        }
+
+        .logo-container {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+
+        #logo-canvas {
+            border: 1px solid #ddd;
+            display: block;
+        }
+
+        .instructions {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #fff;
+            border-radius: 8px;
+            max-width: 512px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .instructions h3 {
+            margin-top: 0;
+            color: #1E88E5;
+        }
+
+        .instructions ol {
+            padding-left: 20px;
+        }
+
+        .instructions li {
+            margin-bottom: 8px;
+        }
+
+        button {
+            background-color: #1E88E5;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            font-size: 16px;
+            cursor: pointer;
+            margin-top: 15px;
+        }
+
+        button:hover {
+            background-color: #1976D2;
+        }
+    </style>
+</head>
+<body>
+    <div class="logo-container">
+        <canvas id="logo-canvas" width="512" height="512"></canvas>
+    </div>
+
+    <button onclick="downloadLogo()">Download Logo as PNG (512x512)</button>
+
+    <div class="instructions">
+        <h3>How to Use This Logo</h3>
+        <ol>
+            <li>Click the "Download Logo as PNG" button above</li>
+            <li>The file will be saved as "naqi-logo-512x512.png"</li>
+            <li>Upload this file to Google Play Console as your app icon</li>
+            <li>Specifications: 512x512 pixels, PNG format, under 1MB ✓</li>
+        </ol>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('logo-canvas');
+        const ctx = canvas.getContext('2d');
+
+        // Set white background
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fillRect(0, 0, 512, 512);
+
+        // Define drop shape parameters
+        const centerX = 256;
+        const centerY = 256;
+        const dropWidth = 280;
+        const dropHeight = 380;
+
+        // Save context for clipping
+        ctx.save();
+
+        // Create water drop path for clipping
+        ctx.beginPath();
+        ctx.moveTo(centerX, centerY - dropHeight/2 + 40);
+
+        // Right side of drop
+        ctx.bezierCurveTo(
+            centerX + dropWidth/2, centerY - dropHeight/3,
+            centerX + dropWidth/2, centerY + dropHeight/6,
+            centerX, centerY + dropHeight/2
+        );
+
+        // Left side of drop
+        ctx.bezierCurveTo(
+            centerX - dropWidth/2, centerY + dropHeight/6,
+            centerX - dropWidth/2, centerY - dropHeight/3,
+            centerX, centerY - dropHeight/2 + 40
+        );
+
+        ctx.closePath();
+        ctx.clip();
+
+        // Fill top portion with light blue
+        const lightBlueGradient = ctx.createLinearGradient(centerX, centerY - dropHeight/2, centerX, centerY + 50);
+        lightBlueGradient.addColorStop(0, '#6DB4E8');
+        lightBlueGradient.addColorStop(1, '#4AA5DD');
+        ctx.fillStyle = lightBlueGradient;
+        ctx.fillRect(0, 0, 512, centerY + 50);
+
+        // Fill bottom portion with dark blue
+        const darkBlueGradient = ctx.createLinearGradient(centerX, centerY + 50, centerX, centerY + dropHeight/2);
+        darkBlueGradient.addColorStop(0, '#2E5B8C');
+        darkBlueGradient.addColorStop(0.5, '#265A8F');
+        darkBlueGradient.addColorStop(1, '#1E4976');
+        ctx.fillStyle = darkBlueGradient;
+        ctx.fillRect(0, centerY + 50, 512, dropHeight);
+
+        // Restore context
+        ctx.restore();
+
+        // Redraw the drop outline for clipping waves
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(centerX, centerY - dropHeight/2 + 40);
+        ctx.bezierCurveTo(
+            centerX + dropWidth/2, centerY - dropHeight/3,
+            centerX + dropWidth/2, centerY + dropHeight/6,
+            centerX, centerY + dropHeight/2
+        );
+        ctx.bezierCurveTo(
+            centerX - dropWidth/2, centerY + dropHeight/6,
+            centerX - dropWidth/2, centerY - dropHeight/3,
+            centerX, centerY - dropHeight/2 + 40
+        );
+        ctx.closePath();
+        ctx.clip();
+
+        // Draw white wavy lines (3 waves)
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+        ctx.lineWidth = 16;
+        ctx.lineCap = 'round';
+
+        // Wave 1 (top)
+        ctx.beginPath();
+        ctx.moveTo(centerX - 200, centerY + 20);
+        ctx.quadraticCurveTo(centerX - 100, centerY - 10, centerX, centerY + 20);
+        ctx.quadraticCurveTo(centerX + 100, centerY + 50, centerX + 200, centerY + 20);
+        ctx.stroke();
+
+        // Wave 2 (middle)
+        ctx.lineWidth = 18;
+        ctx.beginPath();
+        ctx.moveTo(centerX - 180, centerY + 70);
+        ctx.quadraticCurveTo(centerX - 90, centerY + 40, centerX, centerY + 70);
+        ctx.quadraticCurveTo(centerX + 90, centerY + 100, centerX + 180, centerY + 70);
+        ctx.stroke();
+
+        // Wave 3 (bottom)
+        ctx.lineWidth = 20;
+        ctx.beginPath();
+        ctx.moveTo(centerX - 160, centerY + 120);
+        ctx.quadraticCurveTo(centerX - 80, centerY + 90, centerX, centerY + 120);
+        ctx.quadraticCurveTo(centerX + 80, centerY + 150, centerX + 160, centerY + 120);
+        ctx.stroke();
+
+        // Add lighter blue wave overlay
+        ctx.strokeStyle = 'rgba(111, 183, 232, 0.6)';
+        ctx.lineWidth = 14;
+        ctx.beginPath();
+        ctx.moveTo(centerX - 190, centerY + 50);
+        ctx.quadraticCurveTo(centerX - 95, centerY + 20, centerX, centerY + 50);
+        ctx.quadraticCurveTo(centerX + 95, centerY + 80, centerX + 190, centerY + 50);
+        ctx.stroke();
+
+        ctx.restore();
+
+        // Draw drop outline
+        ctx.beginPath();
+        ctx.moveTo(centerX, centerY - dropHeight/2 + 40);
+        ctx.bezierCurveTo(
+            centerX + dropWidth/2, centerY - dropHeight/3,
+            centerX + dropWidth/2, centerY + dropHeight/6,
+            centerX, centerY + dropHeight/2
+        );
+        ctx.bezierCurveTo(
+            centerX - dropWidth/2, centerY + dropHeight/6,
+            centerX - dropWidth/2, centerY - dropHeight/3,
+            centerX, centerY - dropHeight/2 + 40
+        );
+        ctx.closePath();
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.05)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        function downloadLogo() {
+            const link = document.createElement('a');
+            link.download = 'naqi-logo-512x512.png';
+            canvas.toBlob(function(blob) {
+                const url = URL.createObjectURL(blob);
+                link.href = url;
+                link.click();
+                URL.revokeObjectURL(url);
+            }, 'image/png', 1.0);
+        }
+    </script>
+</body>
+</html>

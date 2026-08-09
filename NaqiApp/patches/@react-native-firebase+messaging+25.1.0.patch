@@ -1,0 +1,54 @@
+diff --git a/node_modules/@react-native-firebase/messaging/ios/RNFBMessaging/RNFBMessaging+AppDelegate.h b/node_modules/@react-native-firebase/messaging/ios/RNFBMessaging/RNFBMessaging+AppDelegate.h
+index 708ff24..e407844 100644
+--- a/node_modules/@react-native-firebase/messaging/ios/RNFBMessaging/RNFBMessaging+AppDelegate.h
++++ b/node_modules/@react-native-firebase/messaging/ios/RNFBMessaging/RNFBMessaging+AppDelegate.h
+@@ -16,8 +16,10 @@
+  */
+ 
+ #import <Foundation/Foundation.h>
+-#import <React/RCTBridgeModule.h>
+ #import <UIKit/UIKit.h>
++#import <React/RCTDefines.h>
++#import <RNFBApp/RNFBAppModule.h>
++#import <React/RCTBridgeModule.h>
+ 
+ NS_ASSUME_NONNULL_BEGIN
+ 
+diff --git a/node_modules/@react-native-firebase/messaging/ios/RNFBMessaging/RNFBMessaging+AppDelegate.m b/node_modules/@react-native-firebase/messaging/ios/RNFBMessaging/RNFBMessaging+AppDelegate.m
+index 9c3651d..ac9f4cc 100644
+--- a/node_modules/@react-native-firebase/messaging/ios/RNFBMessaging/RNFBMessaging+AppDelegate.m
++++ b/node_modules/@react-native-firebase/messaging/ios/RNFBMessaging/RNFBMessaging+AppDelegate.m
+@@ -19,6 +19,7 @@
+ #import <GoogleUtilities/GULAppDelegateSwizzler.h>
+ #import <objc/runtime.h>
+ 
++#import <RNFBApp/RCTConvert+FIRApp.h>
+ #import <RNFBApp/RNFBRCTEventEmitter.h>
+ #import <RNFBApp/RNFBSharedUtils.h>
+ #import <React/RCTConvert.h>
+diff --git a/node_modules/@react-native-firebase/messaging/ios/RNFBMessaging/RNFBMessaging+NSNotificationCenter.m b/node_modules/@react-native-firebase/messaging/ios/RNFBMessaging/RNFBMessaging+NSNotificationCenter.m
+index 1867f14..7d1a3f7 100644
+--- a/node_modules/@react-native-firebase/messaging/ios/RNFBMessaging/RNFBMessaging+NSNotificationCenter.m
++++ b/node_modules/@react-native-firebase/messaging/ios/RNFBMessaging/RNFBMessaging+NSNotificationCenter.m
+@@ -15,6 +15,7 @@
+  *
+  */
+ #import <Firebase/Firebase.h>
++#import <RNFBApp/RCTConvert+FIRApp.h>
+ #import <RNFBApp/RNFBJSON.h>
+ #import <RNFBApp/RNFBRCTEventEmitter.h>
+ #import <React/RCTConvert.h>
+diff --git a/node_modules/@react-native-firebase/messaging/ios/RNFBMessaging/RNFBMessagingModule.m b/node_modules/@react-native-firebase/messaging/ios/RNFBMessaging/RNFBMessagingModule.m
+index 657ac96..2a05616 100644
+--- a/node_modules/@react-native-firebase/messaging/ios/RNFBMessaging/RNFBMessagingModule.m
++++ b/node_modules/@react-native-firebase/messaging/ios/RNFBMessaging/RNFBMessagingModule.m
+@@ -15,7 +15,9 @@
+  *
+  */
+ 
++#import <React/RCTBridgeModule.h>
+ #import <Firebase/Firebase.h>
++#import <RNFBApp/RCTConvert+FIRApp.h>
+ #import <RNFBApp/RNFBSharedUtils.h>
+ #import <React/RCTConvert.h>
+ #import <React/RCTUtils.h>

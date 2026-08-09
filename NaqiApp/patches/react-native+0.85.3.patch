@@ -1,0 +1,12 @@
+diff --git a/node_modules/react-native/React/Base/RCTEventDispatcherProtocol.h b/node_modules/react-native/React/Base/RCTEventDispatcherProtocol.h
+index 170135b..9788071 100644
+--- a/node_modules/react-native/React/Base/RCTEventDispatcherProtocol.h
++++ b/node_modules/react-native/React/Base/RCTEventDispatcherProtocol.h
+@@ -9,6 +9,7 @@
+ 
+ #import <React/RCTBridge.h>
+ #import <React/RCTBridgeProxy.h>
++#import <React/RCTDefines.h>
+ 
+ /**
+  * The threshold at which text inputs will start warning that the JS thread

@@ -1,0 +1,940 @@
+from fastapi import APIRouter, Depends, HTTPException, status
+from typing import Dict, Any
+from app.middleware.auth import get_current_user
+from app.schemas.user import UserResponse
+from app.schemas.auth import (
+    CheckDeviceRequest, CheckDeviceResponse,
+    CreateLoginSessionRequest, CreateLoginSessionResponse,
+    VerifyLoginOTPRequest, VerifyLoginOTPResponse,
+    InitiateForgotPasswordRequest, InitiateForgotPasswordResponse,
+    VerifyForgotPasswordOTPRequest, VerifyForgotPasswordOTPResponse,
+    ResetPasswordRequest, ResetPasswordResponse,
+    TrustedDeviceResponse, TrustedDevicesListResponse,
+    RevokeDeviceResponse,
+    # Sign Up Schemas
+    CheckPhoneAvailabilityRequest, CheckPhoneAvailabilityResponse,
+    SignUpWithPhonePasswordRequest, SignUpWithPhonePasswordResponse,
+    InitiatePhoneSignUpRequest, InitiatePhoneSignUpResponse,
+    CompletePhoneSignUpRequest, CompletePhoneSignUpResponse,
+    # Phone Login Schemas
+    PhoneLoginRequest, PhoneLoginResponse,
+    SendOTPRequest, SendOTPResponse,
+    VerifyOTPLoginRequest, VerifyOTPLoginResponse
+)
+from app import database
+from app import firebase_admin
+from firebase_admin import auth
+from datetime import datetime, timedelta
+
+router = APIRouter()
+
+
+@router.get("/me", response_model=UserResponse)
+async def get_current_user_profile(current_user: Dict[str, Any] = Depends(get_current_user)):
+    """Get current authenticated user profile"""
+    return current_user
+
+
+@router.post("/verify")
+async def verify_token(current_user: Dict[str, Any] = Depends(get_current_user)):
+    """Verify token is valid - used for token refresh checks"""
+    return {
+        "valid": True,
+        "user_id": current_user.get('id'),
+        "phone_number": current_user.get('phone_number'),
+        "display_name": current_user.get('display_name')
+    }
+
+
+def mask_phone_number(phone: str) -> str:
+    """Mask phone number for security (e.g., +9647801234567 -> +964***4567)"""
+    if not phone or len(phone) < 8:
+        return "***"
+    return f"{phone[:4]}***{phone[-4:]}"
+
+
+# ==================== Sign Up Endpoints ====================
+
+@router.post("/signup/check-phone", response_model=CheckPhoneAvailabilityResponse)
+async def check_phone_availability(request: CheckPhoneAvailabilityRequest):
+    """
+    Check if phone number is available for registration.
+    Call this before showing the signup form.
+    """
+    phone_number = request.phone_number
+    if not phone_number.startswith('+'):
+        phone_number = f"{request.country_code}{phone_number}"
+
+    try:
+        # Check in Firebase Auth
+        is_available = firebase_admin.verify_phone_number_available(phone_number)
+
+        if is_available:
+            return CheckPhoneAvailabilityResponse(
+                available=True,
+                message="Phone number is available"
+            )
+        else:
+            return CheckPhoneAvailabilityResponse(
+                available=False,
+                message="Phone number already registered"
+            )
+
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+
+@router.post("/signup/phone-password", response_model=SignUpWithPhonePasswordResponse)
+async def signup_with_phone_password(request: SignUpWithPhonePasswordRequest):
+    """
+    Sign up with phone number and password.
+
+    Flow:
+    1. Backend creates user in Firebase Auth
+    2. Backend sends OTP for phone verification
+    3. Client verifies OTP with Firebase
+    4. Client calls /signup/verify-phone endpoint
+    """
+    # Validate passwords match
+    if request.password != request.confirm_password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Passwords do not match"
+        )
+
+    # Validate password strength
+    if len(request.password) < 8:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Password must be at least 8 characters long"
+        )
+
+    # Normalize phone number
+    phone_number = request.phone_number
+    if not phone_number.startswith('+'):
+        phone_number = f"{request.country_code}{phone_number}"
+
+    # Check if phone already exists
+    if not firebase_admin.verify_phone_number_available(phone_number):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Phone number already registered"
+        )
+
+    # Check if email already exists (if provided)
+    if request.email:
+        existing_user = firebase_admin.get_user_by_email(request.email)
+        if existing_user:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Email already registered"
+            )
+
+    try:
+        # Create user in Firebase Auth
+        firebase_user = firebase_admin.create_user_with_phone_and_password(
+            phone_number=phone_number,
+            password=request.password,
+            display_name=request.display_name,
+            email=request.email
+        )
+
+        # Create user in Firestore
+        user = database.create_user(
+            firebase_uid=firebase_user['uid'],
+            email=request.email or '',
+            phone_number=phone_number,
+            display_name=request.display_name,
+            email_verified=False,
+            country_code=request.country_code,
+            role='user'
+        )
+
+        # Create OTP session for phone verification
+        session = database.create_otp_session(
+            user_id=user['id'],
+            firebase_uid=firebase_user['uid'],
+            phone_number=phone_number,
+            session_type='phone_verification',
+            device_fingerprint=request.device_fingerprint
+        )
+
+        return SignUpWithPhonePasswordResponse(
+            success=True,
+            message="Account created. Please verify your phone number.",
+            requires_phone_verification=True,
+            session_id=session['id'],
+            user_id=user['id']
+        )
+
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+
+@router.post("/signup/verify-phone")
+async def verify_phone_after_signup(request: VerifyLoginOTPRequest):
+    """
+    Verify phone number after signup.
+    Client should verify OTP with Firebase first, then call this endpoint.
+
+    This marks the phone as verified and optionally trusts the device.
+    """
+    # Get OTP session
+    session = database.get_otp_session(request.session_id)
+
+    if not session:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Verification session not found"
+        )
+
+    # Check if session expired
+    if session.get('expires_at') < datetime.utcnow():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Verification session expired"
+        )
+
+    # Check session type
+    if session.get('session_type') != 'phone_verification':
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid session type"
+        )
+
+    # Mark session as verified
+    database.mark_otp_verified(request.session_id)
+
+    # Update user's phone_verified status in Firestore
+    db = database.get_firestore_db()
+    users_ref = db.collection(database.USERS_COLLECTION)
+    query = users_ref.where('firebase_uid', '==', session['firebase_uid']).limit(1)
+
+    for doc in query.stream():
+        doc.reference.update({
+            'phone_verified': True,
+            'updated_at': database.firestore.SERVER_TIMESTAMP
+        })
+
+    device_trusted = False
+
+    # Trust device if requested
+    if request.remember_device:
+        database.create_trusted_device(
+            user_id=session['user_id'],
+            firebase_uid=session['firebase_uid'],
+            device_fingerprint=session['device_fingerprint'],
+            device_name="Mobile Device",
+            device_os="Unknown"
+        )
+        device_trusted = True
+
+    return {
+        "success": True,
+        "message": "Phone number verified successfully",
+        "device_trusted": device_trusted
+    }
+
+
+@router.post("/signup/otp-initiate", response_model=InitiatePhoneSignUpResponse)
+async def initiate_otp_signup(request: InitiatePhoneSignUpRequest):
+    """
+    Initiate OTP-based signup (passwordless registration).
+
+    Flow:
+    1. Backend checks if phone is available
+    2. Backend creates a pending signup session
+    3. Client sends OTP via Firebase
+    4. Client verifies OTP with Firebase
+    5. Client calls /signup/otp-complete with Firebase UID
+    """
+    # Normalize phone number
+    phone_number = request.phone_number
+    if not phone_number.startswith('+'):
+        phone_number = f"{request.country_code}{phone_number}"
+
+    # Check if phone already exists
+    if not firebase_admin.verify_phone_number_available(phone_number):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Phone number already registered"
+        )
+
+    # Check if email already exists (if provided)
+    if request.email:
+        existing_user = firebase_admin.get_user_by_email(request.email)
+        if existing_user:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Email already registered"
+            )
+
+    # Create a temporary OTP session with signup data
+    db = database.get_firestore_db()
+
+    expires_at = datetime.utcnow() + timedelta(minutes=10)
+
+    session_data = {
+        'phone_number': phone_number,
+        'display_name': request.display_name,
+        'email': request.email or '',
+        'session_type': 'otp_signup',
+        'device_fingerprint': request.device_fingerprint,
+        'created_at': database.firestore.SERVER_TIMESTAMP,
+        'expires_at': expires_at,
+        'verified': False,
+        'country_code': request.country_code
+    }
+
+    doc_ref = db.collection(database.OTP_SESSIONS_COLLECTION).document()
+    doc_ref.set(session_data)
+
+    return InitiatePhoneSignUpResponse(
+        success=True,
+        message="OTP will be sent to your phone number",
+        session_id=doc_ref.id,
+        phone_number=phone_number,
+        expires_in_seconds=600
+    )
+
+
+@router.post("/signup/otp-complete", response_model=CompletePhoneSignUpResponse)
+async def complete_otp_signup(request: CompletePhoneSignUpRequest):
+    """
+    Complete OTP-based signup after Firebase OTP verification.
+
+    Client should:
+    1. Verify OTP with Firebase signInWithPhoneNumber
+    2. Get the Firebase user UID
+    3. Call this endpoint with session_id and firebase_uid
+    """
+    # Get OTP session
+    session = database.get_otp_session(request.session_id)
+
+    if not session:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Signup session not found"
+        )
+
+    # Check if session expired
+    if session.get('expires_at') < datetime.utcnow():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Signup session expired"
+        )
+
+    # Check session type
+    if session.get('session_type') != 'otp_signup':
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid session type"
+        )
+
+    # Verify the Firebase UID exists
+    try:
+        firebase_user = auth.get_user(request.firebase_uid)
+    except auth.UserNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Firebase user not found"
+        )
+
+    # Verify phone numbers match
+    if firebase_user.phone_number != session.get('phone_number'):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Phone number mismatch"
+        )
+
+    # Update Firebase user with display name and email if needed
+    update_data = {}
+    if session.get('display_name') and not firebase_user.display_name:
+        update_data['display_name'] = session.get('display_name')
+    if session.get('email') and not firebase_user.email:
+        update_data['email'] = session.get('email')
+        update_data['email_verified'] = False
+
+    if update_data:
+        auth.update_user(request.firebase_uid, **update_data)
+
+    # Create user in Firestore
+    user = database.create_user(
+        firebase_uid=request.firebase_uid,
+        email=session.get('email', ''),
+        phone_number=session.get('phone_number'),
+        display_name=session.get('display_name'),
+        email_verified=False,
+        country_code=session.get('country_code'),
+        role='user'
+    )
+
+    # Mark session as verified
+    database.mark_otp_verified(request.session_id)
+
+    # Mark phone as verified in Firestore
+    db = database.get_firestore_db()
+    user_ref = db.collection(database.USERS_COLLECTION).document(user['id'])
+    user_ref.update({
+        'phone_verified': True,
+        'updated_at': database.firestore.SERVER_TIMESTAMP
+    })
+
+    device_trusted = False
+
+    # Trust device if requested
+    if request.remember_device:
+        database.create_trusted_device(
+            user_id=user['id'],
+            firebase_uid=request.firebase_uid,
+            device_fingerprint=session.get('device_fingerprint'),
+            device_name="Mobile Device",
+            device_os="Unknown"
+        )
+        device_trusted = True
+
+    return CompletePhoneSignUpResponse(
+        success=True,
+        message="Account created successfully",
+        user_id=user['id'],
+        device_trusted=device_trusted
+    )
+
+
+# ==================== Login OTP Endpoints ====================
+
+@router.post("/login/check-device", response_model=CheckDeviceResponse)
+async def check_device(request: CheckDeviceRequest):
+    """
+    Check if device needs OTP for login.
+    Returns whether OTP is required based on device trust status.
+    """
+    # Look up user by email using Firebase Admin
+    firebase_user = firebase_admin.get_user_by_email(request.email)
+
+    if not firebase_user:
+        # User doesn't exist - return user_exists=False
+        # Don't reveal if user exists for security
+        return CheckDeviceResponse(
+            requires_otp=True,
+            user_exists=False
+        )
+
+    firebase_uid = firebase_user['uid']
+    phone_number = firebase_user.get('phone_number')
+
+    if not phone_number:
+        # User has no phone number - cannot use OTP
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User has no phone number registered. Please contact support."
+        )
+
+    # Check if device is trusted
+    is_trusted = database.is_device_trusted(firebase_uid, request.device_fingerprint)
+
+    if is_trusted:
+        # Update last used timestamp
+        device = database.get_trusted_device(firebase_uid, request.device_fingerprint)
+        if device:
+            database.update_device_last_used(device['id'])
+
+        return CheckDeviceResponse(
+            requires_otp=False,
+            user_exists=True
+        )
+
+    # Device not trusted - OTP required
+    # Get user from Firestore to create session
+    user = database.get_user_by_firebase_uid(firebase_uid)
+    if not user:
+        # Create user in Firestore if not exists (first time login)
+        user = database.create_user(
+            firebase_uid=firebase_uid,
+            email=firebase_user['email'],
+            phone_number=phone_number,
+            display_name=firebase_user.get('display_name'),
+            email_verified=firebase_user.get('email_verified', False)
+        )
+
+    # Create OTP session
+    session = database.create_otp_session(
+        user_id=user['id'],
+        firebase_uid=firebase_uid,
+        phone_number=phone_number,
+        session_type='login',
+        device_fingerprint=request.device_fingerprint
+    )
+
+    return CheckDeviceResponse(
+        requires_otp=True,
+        user_exists=True,
+        phone_number_masked=mask_phone_number(phone_number),
+        session_id=session['id']
+    )
+
+
+@router.post("/login/create-session", response_model=CreateLoginSessionResponse)
+async def create_login_session(request: CreateLoginSessionRequest):
+    """
+    Create an OTP session for login (alternative endpoint).
+    Similar to check-device but always creates a session.
+    """
+    # Look up user by email
+    firebase_user = firebase_admin.get_user_by_email(request.email)
+
+    if not firebase_user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+
+    firebase_uid = firebase_user['uid']
+    phone_number = firebase_user.get('phone_number')
+
+    if not phone_number:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User has no phone number registered"
+        )
+
+    # Get or create user in Firestore
+    user = database.get_user_by_firebase_uid(firebase_uid)
+    if not user:
+        user = database.create_user(
+            firebase_uid=firebase_uid,
+            email=firebase_user['email'],
+            phone_number=phone_number,
+            display_name=firebase_user.get('display_name'),
+            email_verified=firebase_user.get('email_verified', False)
+        )
+
+    # Create OTP session
+    session = database.create_otp_session(
+        user_id=user['id'],
+        firebase_uid=firebase_uid,
+        phone_number=phone_number,
+        session_type='login',
+        device_fingerprint=request.device_fingerprint
+    )
+
+    return CreateLoginSessionResponse(
+        session_id=session['id'],
+        phone_number_masked=mask_phone_number(phone_number),
+        expires_in_seconds=600  # 10 minutes
+    )
+
+
+@router.post("/login/verify-otp", response_model=VerifyLoginOTPResponse)
+async def verify_login_otp(request: VerifyLoginOTPRequest):
+    """
+    Verify OTP for login and optionally trust the device.
+    Note: Frontend should verify OTP with Firebase first, then call this endpoint.
+    """
+    # Get OTP session
+    session = database.get_otp_session(request.session_id)
+
+    if not session:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="OTP session not found"
+        )
+
+    # Check if session expired
+    expires_at = session.get('expires_at')
+    if expires_at and expires_at < datetime.utcnow():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="OTP session has expired"
+        )
+
+    # Check if session type is correct
+    if session.get('session_type') != 'login':
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid session type"
+        )
+
+    # Mark session as verified
+    database.mark_otp_verified(request.session_id)
+
+    device_trusted = False
+
+    # Trust device if requested
+    if request.remember_device:
+        device_name = "Unknown Device"  # Frontend should send this
+        device_os = "Unknown OS"  # Frontend should send this
+
+        database.create_trusted_device(
+            user_id=session['user_id'],
+            firebase_uid=session['firebase_uid'],
+            device_fingerprint=session['device_fingerprint'],
+            device_name=device_name,
+            device_os=device_os
+        )
+        device_trusted = True
+
+    return VerifyLoginOTPResponse(
+        success=True,
+        message="OTP verified successfully",
+        device_trusted=device_trusted
+    )
+
+
+# ==================== Phone Login Endpoints ====================
+
+@router.post("/login/phone-password", response_model=PhoneLoginResponse)
+async def login_with_phone_password(request: PhoneLoginRequest):
+    """
+    Login with phone number + password.
+    Client should:
+    1. Call this to check device trust
+    2. Sign in with Firebase using phone + password
+    3. If OTP required, verify OTP with Firebase
+    4. Call verify-otp endpoint
+    """
+    # Normalize phone number
+    phone_number = request.phone_number
+    if not phone_number.startswith('+'):
+        phone_number = f"{request.country_code}{phone_number}"
+
+    # Look up user by phone
+    firebase_user = firebase_admin.get_user_by_phone_number(phone_number)
+
+    if not firebase_user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+
+    firebase_uid = firebase_user['uid']
+
+    # Check device trust
+    is_trusted = database.is_device_trusted(firebase_uid, request.device_fingerprint)
+
+    if is_trusted:
+        device = database.get_trusted_device(firebase_uid, request.device_fingerprint)
+        if device:
+            database.update_device_last_used(device['id'])
+
+        return PhoneLoginResponse(
+            requires_otp=False,
+            message="Proceed with password login"
+        )
+
+    # Device not trusted - require OTP
+    user = database.get_user_by_firebase_uid(firebase_uid)
+    if not user:
+        user = database.create_user(
+            firebase_uid=firebase_uid,
+            email=firebase_user.get('email', ''),
+            phone_number=phone_number,
+            display_name=firebase_user.get('display_name'),
+            email_verified=False
+        )
+
+    # Create OTP session
+    session = database.create_otp_session(
+        user_id=user['id'],
+        firebase_uid=firebase_uid,
+        phone_number=phone_number,
+        session_type='phone_login',
+        device_fingerprint=request.device_fingerprint
+    )
+
+    return PhoneLoginResponse(
+        requires_otp=True,
+        message="OTP will be sent to your phone",
+        session_id=session['id'],
+        phone_number_masked=mask_phone_number(phone_number)
+    )
+
+
+@router.post("/login/otp-send", response_model=SendOTPResponse)
+async def send_otp(request: SendOTPRequest):
+    """
+    Initiate OTP-only login (passwordless).
+    Note: Actual OTP sending is done by Firebase on the client side.
+    This endpoint just creates a session for tracking.
+    """
+    phone_number = request.phone_number
+    if not phone_number.startswith('+'):
+        phone_number = f"{request.country_code}{phone_number}"
+
+    # Look up user
+    firebase_user = firebase_admin.get_user_by_phone_number(phone_number)
+
+    if not firebase_user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found with this phone number"
+        )
+
+    user = database.get_user_by_firebase_uid(firebase_user['uid'])
+    if not user:
+        user = database.create_user(
+            firebase_uid=firebase_user['uid'],
+            email=firebase_user.get('email', ''),
+            phone_number=phone_number,
+            display_name=firebase_user.get('display_name')
+        )
+
+    # Create OTP session
+    session = database.create_otp_session(
+        user_id=user['id'],
+        firebase_uid=firebase_user['uid'],
+        phone_number=phone_number,
+        session_type='otp_login',
+        device_fingerprint='otp_login'
+    )
+
+    return SendOTPResponse(
+        success=True,
+        message="OTP sent to phone number",
+        session_id=session['id'],
+        expires_in_seconds=600
+    )
+
+
+@router.post("/login/otp-verify", response_model=VerifyOTPLoginResponse)
+async def verify_otp_login(request: VerifyOTPLoginRequest):
+    """
+    Verify OTP and complete login.
+    Client should verify OTP with Firebase first, then call this.
+    """
+    session = database.get_otp_session(request.session_id)
+
+    if not session:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="OTP session not found"
+        )
+
+    if session.get('expires_at') < datetime.utcnow():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="OTP session expired"
+        )
+
+    # Accept both phone_login and otp_login session types
+    session_type = session.get('session_type')
+    if session_type not in ['phone_login', 'otp_login']:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid session type"
+        )
+
+    # Mark as verified
+    database.mark_otp_verified(request.session_id)
+
+    device_trusted = False
+
+    # Optionally trust device
+    if request.remember_device:
+        database.create_trusted_device(
+            user_id=session['user_id'],
+            firebase_uid=session['firebase_uid'],
+            device_fingerprint=session.get('device_fingerprint', 'otp_login'),
+            device_name="Mobile Device",
+            device_os="Unknown"
+        )
+        device_trusted = True
+
+    return VerifyOTPLoginResponse(
+        success=True,
+        message="Login successful",
+        device_trusted=device_trusted
+    )
+
+
+# ==================== Forgot Password Endpoints ====================
+
+@router.post("/forgot-password/initiate", response_model=InitiateForgotPasswordResponse)
+async def initiate_forgot_password(request: InitiateForgotPasswordRequest):
+    """
+    Initiate forgot password flow.
+    Looks up user and returns masked phone number for OTP.
+    """
+    # Look up user by email
+    firebase_user = firebase_admin.get_user_by_email(request.email)
+
+    if not firebase_user:
+        # For security, don't reveal if user exists
+        # Return generic message
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="If an account with this email exists, an OTP will be sent to the registered phone number"
+        )
+
+    firebase_uid = firebase_user['uid']
+    phone_number = firebase_user.get('phone_number')
+
+    if not phone_number:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No phone number registered for this account. Please contact support."
+        )
+
+    # Get or create user in Firestore
+    user = database.get_user_by_firebase_uid(firebase_uid)
+    if not user:
+        user = database.create_user(
+            firebase_uid=firebase_uid,
+            email=firebase_user['email'],
+            phone_number=phone_number,
+            display_name=firebase_user.get('display_name'),
+            email_verified=firebase_user.get('email_verified', False)
+        )
+
+    # Create OTP session for forgot password
+    session = database.create_otp_session(
+        user_id=user['id'],
+        firebase_uid=firebase_uid,
+        phone_number=phone_number,
+        session_type='forgot_password',
+        device_fingerprint='forgot_password'  # No device tracking for password reset
+    )
+
+    return InitiateForgotPasswordResponse(
+        success=True,
+        phone_number_masked=mask_phone_number(phone_number),
+        session_id=session['id']
+    )
+
+
+@router.post("/forgot-password/verify-otp", response_model=VerifyForgotPasswordOTPResponse)
+async def verify_forgot_password_otp(request: VerifyForgotPasswordOTPRequest):
+    """
+    Verify OTP for forgot password and generate reset token.
+    Note: Frontend should verify OTP with Firebase first, then call this endpoint.
+    """
+    # Get OTP session
+    session = database.get_otp_session(request.session_id)
+
+    if not session:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="OTP session not found"
+        )
+
+    # Check if session expired
+    expires_at = session.get('expires_at')
+    if expires_at and expires_at < datetime.utcnow():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="OTP session has expired"
+        )
+
+    # Check if session type is correct
+    if session.get('session_type') != 'forgot_password':
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid session type"
+        )
+
+    # Mark session as verified
+    database.mark_otp_verified(request.session_id)
+
+    # Generate password reset token
+    reset_token_data = database.create_reset_token(
+        user_id=session['user_id'],
+        firebase_uid=session['firebase_uid']
+    )
+
+    return VerifyForgotPasswordOTPResponse(
+        success=True,
+        reset_token=reset_token_data['token'],
+        expires_in_seconds=900  # 15 minutes
+    )
+
+
+@router.post("/forgot-password/reset", response_model=ResetPasswordResponse)
+async def reset_password(request: ResetPasswordRequest):
+    """
+    Reset password using the reset token.
+    Updates password via Firebase Admin SDK.
+    """
+    # Validate reset token
+    token_data = database.get_reset_token(request.reset_token)
+
+    if not token_data:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired reset token"
+        )
+
+    # Validate password strength (minimum 6 characters)
+    if len(request.new_password) < 6:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Password must be at least 6 characters long"
+        )
+
+    try:
+        # Update password via Firebase Admin
+        firebase_admin.update_user_password(
+            token_data['firebase_uid'],
+            request.new_password
+        )
+
+        # Mark token as used
+        database.mark_token_used(request.reset_token)
+
+        return ResetPasswordResponse(
+            success=True,
+            message="Password reset successfully"
+        )
+
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+
+# ==================== Trusted Devices Endpoints ====================
+
+@router.get("/trusted-devices", response_model=TrustedDevicesListResponse)
+async def get_trusted_devices(current_user: Dict[str, Any] = Depends(get_current_user)):
+    """Get list of trusted devices for the current user"""
+    devices = database.get_user_trusted_devices(current_user['firebase_uid'])
+
+    device_responses = []
+    for device in devices:
+        device_responses.append(TrustedDeviceResponse(
+            id=device['id'],
+            device_name=device.get('device_name', 'Unknown Device'),
+            device_os=device.get('device_os', 'Unknown OS'),
+            trusted_at=device.get('trusted_at', datetime.utcnow()),
+            last_used_at=device.get('last_used_at', datetime.utcnow()),
+            expires_at=device.get('expires_at', datetime.utcnow())
+        ))
+
+    return TrustedDevicesListResponse(devices=device_responses)
+
+
+@router.delete("/trusted-devices/{device_id}", response_model=RevokeDeviceResponse)
+async def revoke_trusted_device(
+    device_id: str,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """Revoke a trusted device"""
+    # TODO: Add validation to ensure device belongs to current user
+    success = database.revoke_trusted_device(device_id)
+
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Device not found"
+        )
+
+    return RevokeDeviceResponse(
+        success=True,
+        message="Device revoked successfully"
+    )
