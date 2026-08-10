@@ -16,19 +16,27 @@ import {initializeMetaSDK, trackAppOpen} from './src/utils/metaTracking';
 
 function App() {
   useEffect(() => {
-    // Initialize Meta SDK when app starts
-    initializeMetaSDK();
+    // Initialize Meta SDK when app starts (with error handling)
+    try {
+      initializeMetaSDK();
+      trackAppOpen();
+    } catch (error) {
+      console.log('Meta SDK initialization failed:', error);
+    }
 
-    // Track initial app open
-    trackAppOpen();
-
-    // Hide splash screen after app is ready
-    BootSplash.hide({fade: true});
+    // Hide splash screen after a short delay to ensure app is ready
+    setTimeout(() => {
+      BootSplash.hide({fade: true});
+    }, 1000);
 
     // Track app opens when app comes to foreground
     const handleAppStateChange = (nextAppState: AppStateStatus) => {
       if (nextAppState === 'active') {
-        trackAppOpen();
+        try {
+          trackAppOpen();
+        } catch (error) {
+          console.log('Track app open failed:', error);
+        }
       }
     };
 
