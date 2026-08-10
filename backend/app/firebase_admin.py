@@ -220,7 +220,7 @@ def send_fcm_multicast(
     data: Dict[str, str] = None
 ) -> messaging.BatchResponse:
     """
-    Send FCM notification to multiple device tokens
+    Send FCM notification to multiple device tokens using HTTP v1 API
 
     Args:
         tokens: List of FCM device tokens
@@ -238,31 +238,36 @@ def send_fcm_multicast(
         raise ValueError("No device tokens provided")
 
     try:
-        message = messaging.MulticastMessage(
-            notification=messaging.Notification(
-                title=title,
-                body=body
-            ),
-            data=data or {},
-            tokens=tokens,
-            android=messaging.AndroidConfig(
-                priority='high',
-                notification=messaging.AndroidNotification(
-                    sound='default',
-                    channel_id='order_updates'
-                )
-            ),
-            apns=messaging.APNSConfig(
-                payload=messaging.APNSPayload(
-                    aps=messaging.Aps(
+        # Create individual messages for each token (HTTP v1 API compatible)
+        messages = []
+        for token in tokens:
+            message = messaging.Message(
+                notification=messaging.Notification(
+                    title=title,
+                    body=body
+                ),
+                data=data or {},
+                token=token,
+                android=messaging.AndroidConfig(
+                    priority='high',
+                    notification=messaging.AndroidNotification(
                         sound='default',
-                        badge=1
+                        channel_id='order_updates'
+                    )
+                ),
+                apns=messaging.APNSConfig(
+                    payload=messaging.APNSPayload(
+                        aps=messaging.Aps(
+                            sound='default',
+                            badge=1
+                        )
                     )
                 )
             )
-        )
+            messages.append(message)
 
-        response = messaging.send_multicast(message)
+        # Use send_each instead of send_multicast (uses HTTP v1 API)
+        response = messaging.send_each(messages)
         return response
     except Exception as e:
         raise ValueError(f"Failed to send notification: {str(e)}")
