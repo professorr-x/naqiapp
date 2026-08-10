@@ -2,21 +2,19 @@ services:
   - type: web
     name: naqi-backend
     runtime: python
-    region: oregon  # or your preferred region
+    region: oregon
     plan: free
     branch: main
     rootDir: backend
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn main:socket_app --host 0.0.0.0 --port $PORT
     envVars:
-      - key: PYTHON_VERSION
-        value: 3.13
       - key: SECRET_KEY
-        generateValue: true  # Render will generate a secure random value
+        generateValue: true
       - key: DEBUG
-        value: false
+        value: "false"
       - key: ALLOWED_ORIGINS
-        sync: false  # You'll set this manually in Render dashboard
+        sync: false
       - key: FIREBASE_SERVICE_ACCOUNT_JSON
-        sync: false  # You'll set this manually in Render dashboard
+        sync: false
     healthCheckPath: /health
