@@ -135,6 +135,15 @@ async def send_order_status_notification(
 
         # Log results
         logger.info(f"Notification sent: {response.success_count} success, {response.failure_count} failed")
+        print(f"[DEBUG] FCM Response: {response.success_count} success, {response.failure_count} failed")
+
+        # Log individual token results
+        for idx, resp in enumerate(response.responses):
+            token_preview = device_tokens[idx][:20] + "..." if len(device_tokens[idx]) > 20 else device_tokens[idx]
+            if resp.success:
+                print(f"[DEBUG] ✓ Token {idx+1}/{len(device_tokens)} ({token_preview}): SUCCESS")
+            else:
+                print(f"[DEBUG] ✗ Token {idx+1}/{len(device_tokens)} ({token_preview}): FAILED - {resp.exception if hasattr(resp, 'exception') else 'Unknown error'}")
 
         # Cleanup failed tokens
         if response.failure_count > 0:
