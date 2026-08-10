@@ -101,8 +101,10 @@ async def update_order_status_endpoint(order_id: str, status: str):
     # Send push notification for specific statuses
     if status in ["confirmed", "dispatched", "delivered", "cancelled"]:
         user_id = order.get('user_id')
+        print(f"[DEBUG] Order {order_id} - user_id: {user_id}, status: {status}")  # Debug
         if user_id:
             try:
+                print(f"[DEBUG] Attempting to send notification to user {user_id}")  # Debug
                 await send_order_status_notification(
                     user_id=user_id,
                     order_id=order_id,
@@ -110,8 +112,12 @@ async def update_order_status_endpoint(order_id: str, status: str):
                     order_data=updated_order
                 )
                 logger.info(f"Notification sent for order {order_id} status change to {status}")
+                print(f"[DEBUG] Notification sent successfully for order {order_id}")  # Debug
             except Exception as e:
                 # Log error but don't fail the status update
                 logger.error(f"Failed to send notification for order {order_id}: {str(e)}")
+                print(f"[DEBUG] Notification failed: {str(e)}")  # Debug
+        else:
+            print(f"[DEBUG] No user_id for order {order_id}, skipping notification")  # Debug
 
     return {"message": "Status updated", "order": updated_order}

@@ -103,11 +103,15 @@ async def send_order_status_notification(
         bool: True if notification sent successfully, False otherwise
     """
     try:
+        print(f"[DEBUG] send_order_status_notification called - user_id: {user_id}, order_id: {order_id}, status: {status}")
+
         # Get user's active device tokens
         device_tokens = get_user_device_tokens(user_id)
+        print(f"[DEBUG] Retrieved {len(device_tokens) if device_tokens else 0} device tokens for user {user_id}")
 
         if not device_tokens:
             logger.info(f"No active device tokens for user {user_id}")
+            print(f"[DEBUG] No active device tokens for user {user_id}")
             return False
 
         # Generate notification content
@@ -115,10 +119,12 @@ async def send_order_status_notification(
 
         if not notification:
             logger.warning(f"No notification template for status: {status}")
+            print(f"[DEBUG] No notification template for status: {status}")
             return False
 
         # Send FCM notification
         logger.info(f"Sending notification to user {user_id} for order {order_id} (status: {status})")
+        print(f"[DEBUG] Sending notification to user {user_id} for order {order_id} (status: {status})")
 
         response = send_fcm_multicast(
             tokens=device_tokens,
