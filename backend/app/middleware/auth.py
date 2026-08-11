@@ -54,6 +54,10 @@ async def get_current_user(
                 detail="User account is disabled"
             )
 
+        # Convert empty email string to None for proper validation
+        if user.get('email') == '':
+            user['email'] = None
+
         return user
 
     except ValueError as e:

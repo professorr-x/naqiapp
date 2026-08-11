@@ -11,7 +11,7 @@ Collections:
 """
 
 from firebase_admin import firestore
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from typing import Optional, Dict, Any, List
 
 
@@ -36,6 +36,13 @@ DEVICE_TOKENS_COLLECTION = "device_tokens"
 
 
 # Helper functions
+def sanitize_user_data(user_data: Dict[str, Any]) -> Dict[str, Any]:
+    """Convert empty email strings to None for proper validation"""
+    if user_data.get('email') == '':
+        user_data['email'] = None
+    return user_data
+
+
 def get_user_by_firebase_uid(firebase_uid: str) -> Optional[Dict[str, Any]]:
     """Get user by Firebase UID"""
     db = get_firestore_db()
@@ -46,7 +53,7 @@ def get_user_by_firebase_uid(firebase_uid: str) -> Optional[Dict[str, Any]]:
     for doc in docs:
         data = doc.to_dict()
         data['id'] = doc.id
-        return data
+        return sanitize_user_data(data)
 
     return None
 
@@ -64,7 +71,7 @@ def create_user(
     db = get_firestore_db()
     user_data = {
         'firebase_uid': firebase_uid,
-        'email': email,
+        'email': email if email else None,
         'phone_number': phone_number,
         'display_name': display_name,
         'country_code': country_code,
@@ -80,8 +87,8 @@ def create_user(
     doc_ref.set(user_data)
 
     user_data['id'] = doc_ref.id
-    user_data['created_at'] = datetime.utcnow()
-    user_data['updated_at'] = datetime.utcnow()
+    user_data['created_at'] = datetime.now(timezone.utc)
+    user_data['updated_at'] = datetime.now(timezone.utc)
 
     return user_data
 
@@ -95,7 +102,7 @@ def get_user_by_id(user_id: str) -> Optional[Dict[str, Any]]:
     if doc.exists:
         data = doc.to_dict()
         data['id'] = doc.id
-        return data
+        return sanitize_user_data(data)
 
     return None
 
@@ -113,8 +120,8 @@ def create_order(order_data: Dict[str, Any]) -> Dict[str, Any]:
     doc_ref.set(order_data)
 
     order_data['id'] = doc_ref.id
-    order_data['created_at'] = datetime.utcnow()
-    order_data['updated_at'] = datetime.utcnow()
+    order_data['created_at'] = datetime.now(timezone.utc)
+    order_data['updated_at'] = datetime.now(timezone.utc)
 
     return order_data
 
@@ -395,7 +402,7 @@ def get_user_by_email(email: str) -> Optional[Dict[str, Any]]:
     for doc in query.stream():
         data = doc.to_dict()
         data['id'] = doc.id
-        return data
+        return sanitize_user_data(data)
 
     return None
 
@@ -409,7 +416,7 @@ def get_user_by_phone_number(phone_number: str) -> Optional[Dict[str, Any]]:
     for doc in query.stream():
         data = doc.to_dict()
         data['id'] = doc.id
-        return data
+        return sanitize_user_data(data)
 
     return None
 
@@ -434,7 +441,7 @@ def create_trusted_device(
 
     # Calculate expiry date (30 days from now)
     from datetime import timedelta
-    expires_at = datetime.utcnow() + timedelta(days=30)
+    expires_at = datetime.now(timezone.utc) + timedelta(days=30)
 
     device_data = {
         'user_id': user_id,
@@ -452,8 +459,8 @@ def create_trusted_device(
     doc_ref.set(device_data)
 
     device_data['id'] = doc_ref.id
-    device_data['trusted_at'] = datetime.utcnow()
-    device_data['last_used_at'] = datetime.utcnow()
+    device_data['trusted_at'] = datetime.now(timezone.utc)
+    device_data['last_used_at'] = datetime.now(timezone.utc)
 
     return device_data
 
@@ -484,7 +491,7 @@ def is_device_trusted(firebase_uid: str, device_fingerprint: str) -> bool:
 
     # Check if expired
     expires_at = device.get('expires_at')
-    if expires_at and expires_at < datetime.utcnow():
+    if expires_at and expires_at < datetime.now(timezone.utc):
         return False
 
     return True
@@ -539,7 +546,7 @@ def cleanup_expired_devices() -> int:
     devices_ref = db.collection(TRUSTED_DEVICES_COLLECTION)
 
     # Get devices that expired before now
-    query = devices_ref.where('expires_at', '<', datetime.utcnow())
+    query = devices_ref.where('expires_at', '<', datetime.now(timezone.utc))
 
     count = 0
     for doc in query.stream():
@@ -562,8 +569,7 @@ def create_otp_session(
     db = get_firestore_db()
 
     # Calculate expiry (10 minutes from now)
-    from datetime import timedelta
-    expires_at = datetime.utcnow() + timedelta(minutes=10)
+    expires_at = datetime.now(timezone.utc) + timedelta(minutes=10)
 
     session_data = {
         'user_id': user_id,
@@ -582,7 +588,7 @@ def create_otp_session(
     doc_ref.set(session_data)
 
     session_data['id'] = doc_ref.id
-    session_data['created_at'] = datetime.utcnow()
+    session_data['created_at'] = datetime.now(timezone.utc)
 
     return session_data
 
@@ -642,7 +648,7 @@ def cleanup_expired_otp_sessions() -> int:
     sessions_ref = db.collection(OTP_SESSIONS_COLLECTION)
 
     # Get sessions that expired before now
-    query = sessions_ref.where('expires_at', '<', datetime.utcnow())
+    query = sessions_ref.where('expires_at', '<', datetime.now(timezone.utc))
 
     count = 0
     for doc in query.stream():
@@ -664,7 +670,7 @@ def create_reset_token(user_id: str, firebase_uid: str) -> Dict[str, Any]:
 
     # Calculate expiry (15 minutes from now)
     from datetime import timedelta
-    expires_at = datetime.utcnow() + timedelta(minutes=15)
+    expires_at = datetime.now(timezone.utc) + timedelta(minutes=15)
 
     token_data = {
         'user_id': user_id,
@@ -679,7 +685,7 @@ def create_reset_token(user_id: str, firebase_uid: str) -> Dict[str, Any]:
     doc_ref.set(token_data)
 
     token_data['id'] = doc_ref.id
-    token_data['created_at'] = datetime.utcnow()
+    token_data['created_at'] = datetime.now(timezone.utc)
 
     return token_data
 
@@ -696,7 +702,7 @@ def get_reset_token(token: str) -> Optional[Dict[str, Any]]:
 
         # Check if expired
         expires_at = data.get('expires_at')
-        if expires_at and expires_at < datetime.utcnow():
+        if expires_at and expires_at < datetime.now(timezone.utc):
             return None
 
         return data
@@ -728,14 +734,14 @@ def cleanup_expired_tokens() -> int:
     count = 0
 
     # Delete expired tokens
-    query = tokens_ref.where('expires_at', '<', datetime.utcnow())
+    query = tokens_ref.where('expires_at', '<', datetime.now(timezone.utc))
     for doc in query.stream():
         doc.reference.delete()
         count += 1
 
     # Delete used tokens older than 1 day
     from datetime import timedelta
-    one_day_ago = datetime.utcnow() - timedelta(days=1)
+    one_day_ago = datetime.now(timezone.utc) - timedelta(days=1)
     query = tokens_ref.where('used', '==', True).where('created_at', '<', one_day_ago)
     for doc in query.stream():
         doc.reference.delete()
@@ -787,7 +793,7 @@ def get_all_users() -> List[Dict[str, Any]]:
     for doc in query:
         user = doc.to_dict()
         user['id'] = doc.id
-        users.append(user)
+        users.append(sanitize_user_data(user))
 
     return users
 
@@ -802,7 +808,7 @@ def get_all_admin_users() -> List[Dict[str, Any]]:
     for doc in query:
         admin = doc.to_dict()
         admin['id'] = doc.id
-        admins.append(admin)
+        admins.append(sanitize_user_data(admin))
 
     return admins
 
@@ -869,9 +875,9 @@ def create_chat_session(
     }
 
     session_ref.set(session_data)
-    session_data['created_at'] = datetime.utcnow()
-    session_data['updated_at'] = datetime.utcnow()
-    session_data['last_message_at'] = datetime.utcnow()
+    session_data['created_at'] = datetime.now(timezone.utc)
+    session_data['updated_at'] = datetime.now(timezone.utc)
+    session_data['last_message_at'] = datetime.now(timezone.utc)
 
     return session_data
 
@@ -971,7 +977,7 @@ def create_message(
     }
 
     message_ref.set(message_data)
-    message_data['created_at'] = datetime.utcnow()
+    message_data['created_at'] = datetime.now(timezone.utc)
 
     return message_data
 
@@ -1056,8 +1062,8 @@ def register_device_token(
 
         data = existing_doc.to_dict()
         data['id'] = existing_doc.id
-        data['last_used_at'] = datetime.utcnow()
-        data['updated_at'] = datetime.utcnow()
+        data['last_used_at'] = datetime.now(timezone.utc)
+        data['updated_at'] = datetime.now(timezone.utc)
         return data
     else:
         # Create new token
@@ -1079,9 +1085,9 @@ def register_device_token(
         doc_ref.set(token_data)
 
         token_data['id'] = doc_ref.id
-        token_data['created_at'] = datetime.utcnow()
-        token_data['updated_at'] = datetime.utcnow()
-        token_data['last_used_at'] = datetime.utcnow()
+        token_data['created_at'] = datetime.now(timezone.utc)
+        token_data['updated_at'] = datetime.now(timezone.utc)
+        token_data['last_used_at'] = datetime.now(timezone.utc)
 
         return token_data
 
@@ -1149,7 +1155,7 @@ def cleanup_old_device_tokens(days: int = 90) -> int:
 
     # Calculate cutoff date
     from datetime import timedelta
-    cutoff_date = datetime.utcnow() - timedelta(days=days)
+    cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
 
     # Get tokens not used since cutoff
     query = tokens_ref.where('last_used_at', '<', cutoff_date)
