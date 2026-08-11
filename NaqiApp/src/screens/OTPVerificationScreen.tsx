@@ -27,11 +27,11 @@ const OTPVerificationScreen: React.FC = () => {
   const {i18n, t} = useTranslation();
   const route = useRoute<OTPVerificationRouteProp>();
   const navigation = useNavigation<NavigationProp>();
-  const {verifyPhoneOTP} = useAuth();
+  const {verifyPhoneOTP, verifyPhoneSignup} = useAuth();
   const [otp, setOTP] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const {confirmation, phoneNumber} = route.params;
+  const {confirmation, phoneNumber, sessionId, password, verificationType} = route.params;
 
   const handleVerifyOTP = async () => {
     if (!otp || otp.length !== 6) {
@@ -46,8 +46,15 @@ const OTPVerificationScreen: React.FC = () => {
 
     setLoading(true);
     try {
-      await verifyPhoneOTP(confirmation, otp);
-      // Navigation will be handled by auth state change in AppNavigator (needsPhoneVerification becomes false)
+      if (verificationType === 'signup' && sessionId && password) {
+        // Handle signup verification
+        await verifyPhoneSignup(sessionId, confirmation, otp, true, phoneNumber, password);
+        // User will be automatically navigated to dashboard by auth state change
+      } else {
+        // Handle phone linking for existing users
+        await verifyPhoneOTP(confirmation, otp);
+        // Navigation will be handled by auth state change in AppNavigator
+      }
     } catch (error: any) {
       console.error('Error verifying OTP:', error);
       Alert.alert(
@@ -76,6 +83,7 @@ const OTPVerificationScreen: React.FC = () => {
         <TextInput
           style={styles.input}
           placeholder="000000"
+          placeholderTextColor={COLORS.gray}
           keyboardType="number-pad"
           value={otp}
           onChangeText={setOTP}

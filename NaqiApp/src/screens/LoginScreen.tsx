@@ -17,6 +17,7 @@ import {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import {useAuth} from '../contexts/AuthContext';
 import type {RootStackParamList} from '../navigation/types';
 import CountryPicker, {Country, CountryCode} from 'react-native-country-picker-modal';
+import {COLORS} from '../constants';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -53,9 +54,14 @@ const LoginScreen = () => {
     try {
       setLoading(true);
 
+      // Remove leading 0 if present (for international format)
+      const normalizedPhone = phoneNumber.startsWith('0')
+        ? phoneNumber.substring(1)
+        : phoneNumber;
+
       // Sign in with phone/password
-      const fullPhoneNumber = `+${callingCode}${phoneNumber}`;
-      const result = await signInWithPhone(fullPhoneNumber, password);
+      const fullPhoneNumber = `+${callingCode}${normalizedPhone}`;
+      const result = await signInWithPhone(fullPhoneNumber, password, `+${callingCode}`);
 
       if (result.requiresOtp) {
         // Navigate to OTP screen for verification
@@ -99,13 +105,21 @@ const LoginScreen = () => {
 
     try {
       setLoading(true);
-      const fullPhoneNumber = `+${callingCode}${phoneNumber}`;
-      const result = await signUpWithPhone(fullPhoneNumber, password, fullName);
 
-      // Navigate to phone verification screen
+      // Remove leading 0 if present (for international format)
+      const normalizedPhone = phoneNumber.startsWith('0')
+        ? phoneNumber.substring(1)
+        : phoneNumber;
+
+      const fullPhoneNumber = `+${callingCode}${normalizedPhone}`;
+      const result = await signUpWithPhone(fullPhoneNumber, password, fullName, `+${callingCode}`);
+
+      // Navigate to phone verification screen with OTP confirmation
       navigation.navigate('OTPVerification', {
-        phoneNumber: fullPhoneNumber,
+        confirmation: result.confirmation,
+        phoneNumber: result.phoneNumber,
         sessionId: result.sessionId,
+        password: result.password,
         verificationType: 'signup',
       });
     } catch (error: any) {
@@ -171,6 +185,7 @@ const LoginScreen = () => {
             <TextInput
               style={styles.input}
               placeholder={t('auth.fullName')}
+              placeholderTextColor={COLORS.gray}
               value={fullName}
               onChangeText={setFullName}
               autoCapitalize="words"
@@ -206,6 +221,7 @@ const LoginScreen = () => {
             <TextInput
               style={styles.phoneInput}
               placeholder={t('auth.phoneNumber')}
+              placeholderTextColor={COLORS.gray}
               value={phoneNumber}
               onChangeText={setPhoneNumber}
               keyboardType="phone-pad"
@@ -218,6 +234,8 @@ const LoginScreen = () => {
           <TextInput
             style={styles.input}
             placeholder={t('auth.password')}
+            placeholderTextColor={COLORS.gray}
+            color="#333"
             value={password}
             onChangeText={setPassword}
             secureTextEntry
@@ -229,6 +247,8 @@ const LoginScreen = () => {
             <TextInput
               style={styles.input}
               placeholder={t('auth.confirmPassword')}
+              placeholderTextColor={COLORS.gray}
+              color="#333"
               value={confirmPassword}
               onChangeText={setConfirmPassword}
               secureTextEntry

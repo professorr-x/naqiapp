@@ -82,12 +82,17 @@ interface AuthContextType {
   ) => Promise<{
     sessionId: string;
     userId: string;
+    confirmation: FirebaseAuthTypes.ConfirmationResult;
+    phoneNumber: string;
+    password: string;
   }>;
   verifyPhoneSignup: (
     sessionId: string,
     confirmation: FirebaseAuthTypes.ConfirmationResult,
     code: string,
     rememberDevice: boolean,
+    phoneNumber: string,
+    password: string,
   ) => Promise<void>;
   signInWithPhone: (
     phoneNumber: string,
@@ -407,15 +412,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({children}) => {
       countryCode,
     );
 
-    // Firebase was created in the backend with the user
-    // Now sign in to get the auth state
-    // The backend created an email-based account using phone as identifier
-    const phoneEmail = `${formattedPhone.replace('+', '')}@naqi.app`;
-    await auth().signInWithEmailAndPassword(phoneEmail, password);
+    // Send OTP to phone number for verification
+    const confirmation = await auth().signInWithPhoneNumber(formattedPhone);
 
     return {
       sessionId: response.data.session_id,
       userId: response.data.user_id,
+      confirmation,
+      phoneNumber: formattedPhone,
+      password, // Store password to sign in after OTP verification
     };
   };
 
@@ -424,6 +429,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({children}) => {
     confirmation: FirebaseAuthTypes.ConfirmationResult,
     code: string,
     rememberDevice: boolean,
+    phoneNumber: string,
+    password: string,
   ) => {
     // Verify OTP and link phone to the email/password account
     const credential = auth.PhoneAuthProvider.credential(
@@ -431,7 +438,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({children}) => {
       code,
     );
 
-    // Link phone credential to current user (already signed in with email/password)
+    // Sign in with phone number first to verify the OTP
+    await auth().signInWithCredential(credential);
+
+    // Then sign in with email/password to get the full account
+    const phoneEmail = `${phoneNumber.replace('+', '')}@naqi.app`;
+    await auth().signInWithEmailAndPassword(phoneEmail, password);
+
+    // Link phone credential to the email/password account
     const currentUser = auth().currentUser;
     if (currentUser) {
       try {
@@ -439,7 +453,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({children}) => {
       } catch (error: any) {
         // If phone already linked, that's okay
         if (error.code !== 'auth/credential-already-in-use') {
-          throw error;
+          console.log('Phone already linked, continuing...');
         }
       }
     }

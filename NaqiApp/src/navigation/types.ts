@@ -36,7 +36,11 @@ export type RootStackParamList = {
   OTPVerification: {
     confirmation: FirebaseAuthTypes.ConfirmationResult;
     phoneNumber: string;
+    sessionId?: string;
+    password?: string;
+    verificationType?: 'signup' | 'phone2fa';
   };
+  OTPTest: undefined;
   MainTabs: undefined;
   OrderType: undefined;
   Quantity: {orderType: string};
