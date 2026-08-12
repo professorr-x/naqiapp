@@ -1049,8 +1049,10 @@ def register_device_token(
         break
 
     if existing_doc:
-        # Update existing token
+        # Update existing token - reassign to current user
         existing_doc.reference.update({
+            'user_id': user_id,  # Update user_id when token is reused
+            'firebase_uid': firebase_uid,  # Update firebase_uid too
             'is_active': True,
             'last_used_at': firestore.SERVER_TIMESTAMP,
             'updated_at': firestore.SERVER_TIMESTAMP,
@@ -1062,6 +1064,8 @@ def register_device_token(
 
         data = existing_doc.to_dict()
         data['id'] = existing_doc.id
+        data['user_id'] = user_id  # Return updated user_id
+        data['firebase_uid'] = firebase_uid  # Return updated firebase_uid
         data['last_used_at'] = datetime.now(timezone.utc)
         data['updated_at'] = datetime.now(timezone.utc)
         return data

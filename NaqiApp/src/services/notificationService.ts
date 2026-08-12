@@ -1,7 +1,14 @@
 import messaging from '@react-native-firebase/messaging';
 import {Platform, PermissionsAndroid} from 'react-native';
 import DeviceInfo from 'react-native-device-info';
+import notifee, {AndroidImportance, EventType} from '@notifee/react-native';
 import api from './api';
+
+export interface NotificationData {
+  type?: string;
+  orderId?: string;
+  [key: string]: any;
+}
 
 export class NotificationService {
   /**
@@ -54,7 +61,11 @@ export class NotificationService {
       const systemVersion = DeviceInfo.getSystemVersion();
       const appVersion = DeviceInfo.getVersion();
 
-      await api.post('/device-tokens/register', {
+      console.log('[NotificationService] Registering device token...');
+      console.log('[NotificationService] Token preview:', token.substring(0, 20) + '...');
+      console.log('[NotificationService] Platform:', Platform.OS);
+
+      const response = await api.post('/device-tokens/register', {
         device_token: token,
         device_platform: Platform.OS,
         device_name: deviceName,
@@ -62,40 +73,115 @@ export class NotificationService {
         app_version: appVersion,
       });
 
-      console.log('Device token registered successfully');
-    } catch (error) {
-      console.error('Failed to register device token:', error);
+      console.log('[NotificationService] ✓ Device token registered successfully');
+      console.log('[NotificationService] Response:', response.data);
+    } catch (error: any) {
+      console.error('[NotificationService] ✗ Failed to register device token');
+      console.error('[NotificationService] Error details:', error.response?.data || error.message);
+      console.error('[NotificationService] Status code:', error.response?.status);
       throw error;
     }
   }
 
   /**
+   * Create a notification channel for Android (required for Android 8.0+)
+   */
+  async createNotificationChannel() {
+    if (Platform.OS === 'android') {
+      await notifee.createChannel({
+        id: 'default',
+        name: 'Default Channel',
+        importance: AndroidImportance.HIGH,
+        sound: 'default',
+      });
+    }
+  }
+
+  /**
+   * Display a foreground notification using Notifee
+   */
+  async displayForegroundNotification(
+    title: string,
+    body: string,
+    data?: NotificationData,
+  ) {
+    await this.createNotificationChannel();
+
+    await notifee.displayNotification({
+      title,
+      body,
+      data: data || {},
+      android: {
+        channelId: 'default',
+        importance: AndroidImportance.HIGH,
+        pressAction: {
+          id: 'default',
+        },
+        sound: 'default',
+      },
+      ios: {
+        sound: 'default',
+        foregroundPresentationOptions: {
+          banner: true,
+          sound: true,
+          badge: true,
+        },
+      },
+    });
+  }
+
+  /**
    * Setup notification handlers for foreground, background, and quit states
    */
-  setupNotificationHandlers(onNotificationTap: (data: any) => void) {
-    // Foreground notification handler
+  setupNotificationHandlers(onNotificationTap: (data: NotificationData) => void) {
+    // Foreground notification handler - display banner when app is open
     messaging().onMessage(async remoteMessage => {
       console.log('Foreground notification received:', remoteMessage);
-      // You can show an in-app notification here if needed
-      // For now, we'll just log it - the system notification will show automatically
+
+      const title = remoteMessage.notification?.title || 'New Notification';
+      const body = remoteMessage.notification?.body || '';
+      const data = remoteMessage.data as NotificationData;
+
+      // Display the notification banner
+      await this.displayForegroundNotification(title, body, data);
     });
 
-    // Background/quit state - notification opened (app in background)
-    messaging().onNotificationOpenedApp(remoteMessage => {
-      console.log('Notification opened from background:', remoteMessage);
-      if (remoteMessage.data) {
-        onNotificationTap(remoteMessage.data);
+    // Handle notification tap events from Notifee (foreground notifications)
+    notifee.onForegroundEvent(({type, detail}) => {
+      if (type === EventType.PRESS) {
+        console.log('Foreground notification tapped:', detail.notification?.data);
+        if (detail.notification?.data) {
+          onNotificationTap(detail.notification.data as NotificationData);
+        }
       }
     });
 
-    // Check if app was opened from a notification (quit state)
+    // Background notification tap handler (Notifee)
+    notifee.onBackgroundEvent(async ({type, detail}) => {
+      if (type === EventType.PRESS) {
+        console.log('Background notification tapped:', detail.notification?.data);
+        if (detail.notification?.data) {
+          onNotificationTap(detail.notification.data as NotificationData);
+        }
+      }
+    });
+
+    // Background/quit state - notification opened (app in background) - Firebase
+    messaging().onNotificationOpenedApp(remoteMessage => {
+      console.log('Notification opened from background (Firebase):', remoteMessage);
+      if (remoteMessage.data) {
+        onNotificationTap(remoteMessage.data as NotificationData);
+      }
+    });
+
+    // Check if app was opened from a notification (quit state) - Firebase
     messaging()
       .getInitialNotification()
       .then(remoteMessage => {
         if (remoteMessage) {
-          console.log('Notification opened from quit state:', remoteMessage);
+          console.log('Notification opened from quit state (Firebase):', remoteMessage);
           if (remoteMessage.data) {
-            onNotificationTap(remoteMessage.data);
+            onNotificationTap(remoteMessage.data as NotificationData);
           }
         }
       });
