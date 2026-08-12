@@ -7,7 +7,7 @@ import {
   checkDeviceRequiresOTP,
   verifyLoginOTP,
   initiateForgotPassword,
-  verifyForgotPasswordOTP,
+  verifyForgotPasswordOTP as apiVerifyForgotPasswordOTP,
   resetPasswordWithToken,
   checkPhoneAvailability,
   signUpWithPhonePassword,
@@ -17,7 +17,8 @@ import {
   verifyLoginOTPPhone,
 } from '../services/api';
 import {getDeviceFingerprint, getDeviceInfo} from '../utils/deviceFingerprint';
-import notificationService from '../services/notificationService';
+import notificationService, {NotificationData} from '../services/notificationService';
+import {navigate} from '../navigation/AppNavigator';
 
 interface AuthContextType {
   user: FirebaseAuthTypes.User | null;
@@ -188,7 +189,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({children}) => {
         setUser(firebaseUser);
 
         // Setup push notifications after successful authentication
-        setupPushNotifications();
+        // Add small delay to ensure token is available in AsyncStorage for API calls
+        setTimeout(() => {
+          setupPushNotifications();
+        }, 500);
       } else {
         setIdToken(null);
         setNeedsPhoneVerification(false);
@@ -205,14 +209,41 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({children}) => {
 
   // Setup notification handlers once on mount
   useEffect(() => {
-    notificationService.setupNotificationHandlers((data) => {
-      // Handle notification tap - navigate to order history
-      if (data?.type === 'order_status_update') {
-        console.log('Order status update notification tapped:', data);
-        // Navigation will be handled by the app's navigation context
-        // You can emit an event or use a navigation ref here
+    const handleNotificationTap = (data: NotificationData) => {
+      console.log('Notification tapped with data:', data);
+
+      // Handle different notification types
+      switch (data.type) {
+        case 'order_status_update':
+        case 'order_update':
+          // Navigate to OrderDetails screen if orderId is provided
+          if (data.orderId) {
+            console.log('Navigating to OrderDetails with orderId:', data.orderId);
+            navigate('OrderDetails', {orderId: data.orderId});
+          } else {
+            // Navigate to OrderHistory if no specific order ID
+            console.log('Navigating to OrderHistory');
+            navigate('MainTabs', {screen: 'OrderHistory'});
+          }
+          break;
+
+        case 'chat_message':
+          // Navigate to Chat screen
+          console.log('Navigating to Chat');
+          navigate('MainTabs', {screen: 'Chat'});
+          break;
+
+        case 'promotion':
+        case 'general':
+        default:
+          // Navigate to Home screen for general notifications
+          console.log('Navigating to Home');
+          navigate('MainTabs', {screen: 'Home'});
+          break;
       }
-    });
+    };
+
+    notificationService.setupNotificationHandlers(handleNotificationTap);
   }, []);
 
   // Email/Password authentication
@@ -364,9 +395,21 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({children}) => {
     await confirmation.confirm(code);
 
     // Then get reset token from backend
-    const response = await verifyForgotPasswordOTP(sessionId);
+    try {
+      const response = await apiVerifyForgotPasswordOTP(sessionId);
+      return response.data.reset_token;
+    } catch (backendError: any) {
+      // If backend validation fails, sign out to prevent unwanted auth state
+      console.error('Backend forgot password OTP verification failed:', backendError);
+      await signOut();
 
-    return response.data.reset_token;
+      // Re-throw with more specific error message
+      const errorMessage = backendError.message || 'Failed to verify OTP';
+      if (errorMessage.includes('expired') || errorMessage.includes('invalid session')) {
+        throw new Error('Session expired. Please start the password reset process again.');
+      }
+      throw new Error(errorMessage);
+    }
   };
 
   const resetPassword = async (resetToken: string, newPassword: string) => {
@@ -531,7 +574,20 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({children}) => {
     }
 
     // Then notify backend to trust device if requested
-    await verifyLoginOTPPhone(sessionId, rememberDevice);
+    try {
+      await verifyLoginOTPPhone(sessionId, rememberDevice);
+    } catch (backendError: any) {
+      // If backend validation fails, sign out the user to prevent auto-navigation
+      console.error('Backend OTP verification failed:', backendError);
+      await signOut();
+
+      // Re-throw with more specific error message
+      const errorMessage = backendError.message || 'Backend verification failed';
+      if (errorMessage.includes('expired') || errorMessage.includes('invalid session')) {
+        throw new Error('Session expired. Please try logging in again.');
+      }
+      throw new Error(errorMessage);
+    }
   };
 
   return (
