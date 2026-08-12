@@ -1,7 +1,8 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 import socketio
+import time
 
 # Initialize Firebase Admin SDK (includes Firestore)
 from app.firebase_admin import initialize_firebase
@@ -15,6 +16,25 @@ app = FastAPI(
     description="Backend API for NAQI water delivery app",
     version="1.0.0",
 )
+
+# Request logging middleware
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    start_time = time.time()
+
+    # Log incoming request
+    auth_header = request.headers.get("authorization", "None")
+    auth_preview = auth_header[:30] + "..." if len(auth_header) > 30 else auth_header
+    print(f"[REQUEST] {request.method} {request.url.path} - Auth: {auth_preview}")
+
+    # Process request
+    response = await call_next(request)
+
+    # Log response
+    duration = time.time() - start_time
+    print(f"[RESPONSE] {request.method} {request.url.path} - Status: {response.status_code} - Duration: {duration:.2f}s")
+
+    return response
 
 # Configure CORS
 # For development, allow all origins. For production, use settings.cors_origins
