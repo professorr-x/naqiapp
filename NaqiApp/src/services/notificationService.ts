@@ -54,8 +54,10 @@ export class NotificationService {
 
   /**
    * Register device token with backend
+   * @param token FCM device token
+   * @param authToken Optional Firebase auth token to use directly (bypasses AsyncStorage)
    */
-  async registerToken(token: string): Promise<void> {
+  async registerToken(token: string, authToken?: string): Promise<void> {
     try {
       const deviceName = await DeviceInfo.getDeviceName();
       const systemVersion = DeviceInfo.getSystemVersion();
@@ -64,6 +66,12 @@ export class NotificationService {
       console.log('[NotificationService] Registering device token...');
       console.log('[NotificationService] Token preview:', token.substring(0, 20) + '...');
       console.log('[NotificationService] Platform:', Platform.OS);
+      console.log('[NotificationService] Auth token provided:', authToken ? 'Yes' : 'No (using interceptor)');
+
+      // Build headers - use provided authToken if available to avoid AsyncStorage race condition
+      const headers = authToken ? {
+        Authorization: `Bearer ${authToken}`
+      } : undefined;
 
       const response = await api.post('/device-tokens/register', {
         device_token: token,
@@ -71,7 +79,7 @@ export class NotificationService {
         device_name: deviceName,
         device_os: `${Platform.OS} ${systemVersion}`,
         app_version: appVersion,
-      });
+      }, headers ? { headers } : undefined);
 
       console.log('[NotificationService] ✓ Device token registered successfully');
       console.log('[NotificationService] Response:', response.data);

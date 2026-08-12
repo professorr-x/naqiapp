@@ -126,20 +126,22 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({children}) => {
   const [userRole, setUserRole] = useState<string | null>(null);
 
   // Setup push notifications
-  const setupPushNotifications = async () => {
+  const setupPushNotifications = async (firebaseToken: string) => {
     try {
+      console.log('[AuthContext] Setting up push notifications with auth token');
       const hasPermission = await notificationService.requestPermission();
       if (hasPermission) {
-        const token = await notificationService.getToken();
-        if (token) {
-          await notificationService.registerToken(token);
-          console.log('Push notifications registered successfully');
+        const fcmToken = await notificationService.getToken();
+        if (fcmToken) {
+          // Pass Firebase auth token directly to avoid AsyncStorage race condition
+          await notificationService.registerToken(fcmToken, firebaseToken);
+          console.log('[AuthContext] ✓ Push notifications registered successfully');
         }
       } else {
-        console.log('Push notification permission denied');
+        console.log('[AuthContext] Push notification permission denied');
       }
     } catch (error) {
-      console.error('Failed to setup push notifications:', error);
+      console.error('[AuthContext] Failed to setup push notifications:', error);
     }
   };
 
@@ -189,10 +191,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({children}) => {
         setUser(firebaseUser);
 
         // Setup push notifications after successful authentication
-        // Add small delay to ensure token is available in AsyncStorage for API calls
-        setTimeout(() => {
-          setupPushNotifications();
-        }, 500);
+        // Pass the Firebase token directly to avoid AsyncStorage race condition
+        setupPushNotifications(token);
       } else {
         setIdToken(null);
         setNeedsPhoneVerification(false);
