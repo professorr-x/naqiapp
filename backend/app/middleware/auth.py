@@ -24,6 +24,7 @@ async def get_current_user(
         HTTPException: If token is invalid or user is disabled
     """
     token = credentials.credentials
+    print(f"[AUTH] Authenticating request with token: {token[:20]}...")
 
     try:
         # Verify Firebase token
@@ -33,11 +34,14 @@ async def get_current_user(
         phone_number = decoded_token.get('phone_number', '')
         email_verified = decoded_token.get('email_verified', False)
 
+        print(f"[AUTH] Token verified for user: {firebase_uid}")
+
         # Get or create user in Firestore
         user = get_user_by_firebase_uid(firebase_uid)
 
         if not user:
             # First time login - create user
+            print(f"[AUTH] Creating new user: {firebase_uid}")
             user = create_user(
                 firebase_uid=firebase_uid,
                 email=email,
@@ -45,10 +49,14 @@ async def get_current_user(
                 display_name=decoded_token.get('name'),
                 email_verified=email_verified
             )
-            print(f"New user created: {email}")
+            print(f"[AUTH] New user created: {email}")
 
         # Check if user is active
-        if not user.get('is_active', True):
+        is_active = user.get('is_active', True)
+        print(f"[AUTH] User {user.get('id')} - is_active: {is_active}")
+
+        if not is_active:
+            print(f"[AUTH] ✗ FORBIDDEN: User account is disabled for {user.get('id')}")
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="User account is disabled"
@@ -58,15 +66,21 @@ async def get_current_user(
         if user.get('email') == '':
             user['email'] = None
 
+        print(f"[AUTH] ✓ Authentication successful for user {user.get('id')}")
         return user
 
     except ValueError as e:
+        print(f"[AUTH] ✗ UNAUTHORIZED: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=str(e),
             headers={"WWW-Authenticate": "Bearer"},
         )
+    except HTTPException:
+        # Re-raise HTTP exceptions (like 403 from is_active check)
+        raise
     except Exception as e:
+        print(f"[AUTH] ✗ ERROR: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Authentication error: {str(e)}"
