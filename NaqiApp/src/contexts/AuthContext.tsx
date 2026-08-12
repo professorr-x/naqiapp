@@ -373,6 +373,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({children}) => {
     // Verify OTP with Firebase first
     await confirmation.confirm(code);
 
+    // Get fresh Firebase token and save to AsyncStorage
+    const currentUser = auth().currentUser;
+    if (currentUser) {
+      const token = await currentUser.getIdToken();
+      await AsyncStorage.setItem('firebase_token', token);
+    }
+
     // Then notify backend to trust device if requested
     await verifyLoginOTP(sessionId, rememberDevice);
   };
@@ -501,6 +508,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({children}) => {
       }
     }
 
+    // Get fresh Firebase token and save to AsyncStorage
+    const user = auth().currentUser;
+    if (user) {
+      const token = await user.getIdToken();
+      await AsyncStorage.setItem('firebase_token', token);
+    }
+
     // Notify backend to mark phone as verified and trust device
     await verifyPhoneAfterSignup(sessionId, rememberDevice);
 
@@ -575,6 +589,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({children}) => {
 
     // Then notify backend to trust device if requested
     try {
+      // Get fresh Firebase token directly from the user (not AsyncStorage)
+      const currentUser = auth().currentUser;
+      if (currentUser) {
+        const token = await currentUser.getIdToken();
+        await AsyncStorage.setItem('firebase_token', token);
+      }
+
       await verifyLoginOTPPhone(sessionId, rememberDevice);
     } catch (backendError: any) {
       // If backend validation fails, sign out the user to prevent auto-navigation

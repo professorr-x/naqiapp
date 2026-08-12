@@ -24,7 +24,7 @@ from app.schemas.auth import (
 from app import database
 from app import firebase_admin
 from firebase_admin import auth
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 router = APIRouter()
 
@@ -51,6 +51,47 @@ def mask_phone_number(phone: str) -> str:
     if not phone or len(phone) < 8:
         return "***"
     return f"{phone[:4]}***{phone[-4:]}"
+
+
+def extract_country_code(phone_number: str) -> str:
+    """
+    Extract country code from phone number in E.164 format.
+    E.g., +9647801234567 -> +964, +447931904370 -> +44, +31683255285 -> +31
+
+    Common country code lengths:
+    - 1 digit: +1 (USA, Canada)
+    - 2 digits: +44 (UK), +31 (Netherlands), +81 (Japan), +86 (China), etc.
+    - 3 digits: +964 (Iraq), +971 (UAE), +966 (Saudi Arabia), etc.
+    """
+    if not phone_number or not phone_number.startswith('+'):
+        return "+964"  # Default fallback
+
+    # Try to extract country code (1-3 digits after +)
+    # We'll check common patterns from longest to shortest
+    phone_digits = phone_number[1:]  # Remove + sign
+
+    # 3-digit country codes (most specific first)
+    if len(phone_digits) >= 3:
+        potential_code = phone_digits[:3]
+        # Common 3-digit codes
+        if potential_code in ['964', '971', '966', '968', '965', '967', '974', '973', '962', '970', '961', '963', '972']:
+            return f"+{potential_code}"
+
+    # 2-digit country codes
+    if len(phone_digits) >= 2:
+        potential_code = phone_digits[:2]
+        # Common 2-digit codes (checking for non-overlap with 3-digit)
+        if potential_code in ['44', '31', '32', '33', '34', '36', '39', '41', '43', '45', '46', '47', '48', '49',
+                              '51', '52', '53', '54', '55', '56', '57', '58', '60', '61', '62', '63', '64', '65', '66',
+                              '81', '82', '84', '86', '90', '91', '92', '93', '94', '95', '98']:
+            return f"+{potential_code}"
+
+    # 1-digit country codes (USA/Canada)
+    if len(phone_digits) >= 1 and phone_digits[0] == '1':
+        return "+1"
+
+    # Default fallback
+    return "+964"
 
 
 # ==================== Sign Up Endpoints ====================
@@ -142,6 +183,9 @@ async def signup_with_phone_password(request: SignUpWithPhonePasswordRequest):
             email=request.email
         )
 
+        # Extract actual country code from the phone number
+        actual_country_code = extract_country_code(phone_number)
+
         # Create user in Firestore
         user = database.create_user(
             firebase_uid=firebase_user['uid'],
@@ -149,7 +193,7 @@ async def signup_with_phone_password(request: SignUpWithPhonePasswordRequest):
             phone_number=phone_number,
             display_name=request.display_name,
             email_verified=False,
-            country_code=request.country_code,
+            country_code=actual_country_code,
             role='user'
         )
 
@@ -195,11 +239,15 @@ async def verify_phone_after_signup(request: VerifyLoginOTPRequest):
         )
 
     # Check if session expired
-    if session.get('expires_at') < datetime.utcnow():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Verification session expired"
-        )
+    expires_at = session.get('expires_at')
+    if expires_at:
+        # Handle both timezone-aware and timezone-naive datetimes
+        now = datetime.now(timezone.utc) if (hasattr(expires_at, 'tzinfo') and expires_at.tzinfo) else datetime.utcnow()
+        if expires_at < now:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Verification session expired"
+            )
 
     # Check session type
     if session.get('session_type') != 'phone_verification':
@@ -278,7 +326,10 @@ async def initiate_otp_signup(request: InitiatePhoneSignUpRequest):
     # Create a temporary OTP session with signup data
     db = database.get_firestore_db()
 
-    expires_at = datetime.utcnow() + timedelta(minutes=10)
+    expires_at = datetime.now(timezone.utc) + timedelta(minutes=10)
+
+    # Extract actual country code from the phone number
+    actual_country_code = extract_country_code(phone_number)
 
     session_data = {
         'phone_number': phone_number,
@@ -289,7 +340,7 @@ async def initiate_otp_signup(request: InitiatePhoneSignUpRequest):
         'created_at': database.firestore.SERVER_TIMESTAMP,
         'expires_at': expires_at,
         'verified': False,
-        'country_code': request.country_code
+        'country_code': actual_country_code
     }
 
     doc_ref = db.collection(database.OTP_SESSIONS_COLLECTION).document()
@@ -324,11 +375,15 @@ async def complete_otp_signup(request: CompletePhoneSignUpRequest):
         )
 
     # Check if session expired
-    if session.get('expires_at') < datetime.utcnow():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Signup session expired"
-        )
+    expires_at_check = session.get('expires_at')
+    if expires_at_check:
+        # Handle both timezone-aware and timezone-naive datetimes
+        now = datetime.now(timezone.utc) if (hasattr(expires_at_check, 'tzinfo') and expires_at_check.tzinfo) else datetime.utcnow()
+        if expires_at_check < now:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Signup session expired"
+            )
 
     # Check session type
     if session.get('session_type') != 'otp_signup':
@@ -460,7 +515,8 @@ async def check_device(request: CheckDeviceRequest):
             email=firebase_user['email'],
             phone_number=phone_number,
             display_name=firebase_user.get('display_name'),
-            email_verified=firebase_user.get('email_verified', False)
+            email_verified=firebase_user.get('email_verified', False),
+            country_code=extract_country_code(phone_number)
         )
 
     # Create OTP session
@@ -512,7 +568,8 @@ async def create_login_session(request: CreateLoginSessionRequest):
             email=firebase_user['email'],
             phone_number=phone_number,
             display_name=firebase_user.get('display_name'),
-            email_verified=firebase_user.get('email_verified', False)
+            email_verified=firebase_user.get('email_verified', False),
+            country_code=extract_country_code(phone_number)
         )
 
     # Create OTP session
@@ -548,11 +605,14 @@ async def verify_login_otp(request: VerifyLoginOTPRequest):
 
     # Check if session expired
     expires_at = session.get('expires_at')
-    if expires_at and expires_at < datetime.utcnow():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="OTP session has expired"
-        )
+    if expires_at:
+        # Handle both timezone-aware and timezone-naive datetimes
+        now = datetime.now(timezone.utc) if (hasattr(expires_at, 'tzinfo') and expires_at.tzinfo) else datetime.utcnow()
+        if expires_at < now:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="OTP session has expired"
+            )
 
     # Check if session type is correct
     if session.get('session_type') != 'login':
@@ -636,7 +696,8 @@ async def login_with_phone_password(request: PhoneLoginRequest):
             email=firebase_user.get('email', ''),
             phone_number=phone_number,
             display_name=firebase_user.get('display_name'),
-            email_verified=False
+            email_verified=False,
+            country_code=extract_country_code(phone_number)
         )
 
     # Create OTP session
@@ -682,7 +743,8 @@ async def send_otp(request: SendOTPRequest):
             firebase_uid=firebase_user['uid'],
             email=firebase_user.get('email', ''),
             phone_number=phone_number,
-            display_name=firebase_user.get('display_name')
+            display_name=firebase_user.get('display_name'),
+            country_code=extract_country_code(phone_number)
         )
 
     # Create OTP session
@@ -716,11 +778,19 @@ async def verify_otp_login(request: VerifyOTPLoginRequest):
             detail="OTP session not found"
         )
 
-    if session.get('expires_at') < datetime.utcnow():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="OTP session expired"
-        )
+    expires_at = session.get('expires_at')
+    if expires_at:
+        # Handle both timezone-aware and timezone-naive datetimes
+        if hasattr(expires_at, 'tzinfo') and expires_at.tzinfo is not None:
+            now = datetime.now(timezone.utc)
+        else:
+            now = datetime.utcnow()
+
+        if expires_at < now:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="OTP session expired"
+            )
 
     # Accept both phone_login and otp_login session types
     session_type = session.get('session_type')
@@ -789,7 +859,8 @@ async def initiate_forgot_password(request: InitiateForgotPasswordRequest):
             email=firebase_user['email'],
             phone_number=phone_number,
             display_name=firebase_user.get('display_name'),
-            email_verified=firebase_user.get('email_verified', False)
+            email_verified=firebase_user.get('email_verified', False),
+            country_code=extract_country_code(phone_number)
         )
 
     # Create OTP session for forgot password
@@ -825,11 +896,14 @@ async def verify_forgot_password_otp(request: VerifyForgotPasswordOTPRequest):
 
     # Check if session expired
     expires_at = session.get('expires_at')
-    if expires_at and expires_at < datetime.utcnow():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="OTP session has expired"
-        )
+    if expires_at:
+        # Handle both timezone-aware and timezone-naive datetimes
+        now = datetime.now(timezone.utc) if (hasattr(expires_at, 'tzinfo') and expires_at.tzinfo) else datetime.utcnow()
+        if expires_at < now:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="OTP session has expired"
+            )
 
     # Check if session type is correct
     if session.get('session_type') != 'forgot_password':
@@ -911,9 +985,9 @@ async def get_trusted_devices(current_user: Dict[str, Any] = Depends(get_current
             id=device['id'],
             device_name=device.get('device_name', 'Unknown Device'),
             device_os=device.get('device_os', 'Unknown OS'),
-            trusted_at=device.get('trusted_at', datetime.utcnow()),
-            last_used_at=device.get('last_used_at', datetime.utcnow()),
-            expires_at=device.get('expires_at', datetime.utcnow())
+            trusted_at=device.get('trusted_at', datetime.now(timezone.utc)),
+            last_used_at=device.get('last_used_at', datetime.now(timezone.utc)),
+            expires_at=device.get('expires_at', datetime.now(timezone.utc))
         ))
 
     return TrustedDevicesListResponse(devices=device_responses)
