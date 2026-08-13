@@ -9,7 +9,7 @@ This module provides endpoints for user management including:
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from typing import List
-from app.schemas.user import UserResponse, UpdateUserRoleRequest, AdminUserCreate
+from app.schemas.user import UserResponse, UpdateUserRoleRequest, AdminUserCreate, UpdateLanguageRequest
 from app.middleware.rbac import require_admin, get_current_user
 from app.database import (
     get_user_by_firebase_uid,
@@ -19,7 +19,9 @@ from app.database import (
     get_all_users,
     create_user,
     get_user_by_email,
-    delete_user_from_firestore
+    delete_user_from_firestore,
+    update_user_language,
+    get_user_by_id
 )
 from firebase_admin import auth as firebase_auth
 
@@ -262,4 +264,51 @@ async def delete_user(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to delete user: {str(e)}"
+        )
+
+
+@router.patch("/me/language", response_model=dict)
+async def update_current_user_language(
+    request: UpdateLanguageRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """Update current user's preferred language."""
+    # Validate language
+    if request.language not in ['en', 'ar']:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid language. Must be 'en' or 'ar'"
+        )
+
+    # Get user's Firestore document ID
+    user_data = get_user_by_firebase_uid(current_user['firebase_uid'])
+    if not user_data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+
+    # Update language preference
+    try:
+        success = update_user_language(user_data['id'], request.language)
+
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+
+        return {
+            "message": "Language preference updated successfully",
+            "language": request.language
+        }
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update language: {str(e)}"
         )

@@ -65,7 +65,8 @@ def create_user(
     display_name: Optional[str] = None,
     email_verified: bool = False,
     country_code: Optional[str] = None,
-    role: str = 'user'
+    role: str = 'user',
+    preferred_language: str = 'en'
 ) -> Dict[str, Any]:
     """Create a new user in Firestore"""
     db = get_firestore_db()
@@ -76,6 +77,7 @@ def create_user(
         'display_name': display_name,
         'country_code': country_code,
         'role': role,  # Default to 'user'
+        'preferred_language': preferred_language,  # Default to 'en'
         'is_active': True,
         'email_verified': email_verified,
         'phone_verified': bool(phone_number),
@@ -105,6 +107,26 @@ def get_user_by_id(user_id: str) -> Optional[Dict[str, Any]]:
         return sanitize_user_data(data)
 
     return None
+
+
+def update_user_language(user_id: str, language: str) -> bool:
+    """Update user's preferred language"""
+    if language not in ['en', 'ar']:
+        raise ValueError("Invalid language. Must be 'en' or 'ar'")
+
+    db = get_firestore_db()
+    doc_ref = db.collection(USERS_COLLECTION).document(user_id)
+    doc = doc_ref.get()
+
+    if not doc.exists:
+        return False
+
+    doc_ref.update({
+        'preferred_language': language,
+        'updated_at': firestore.SERVER_TIMESTAMP
+    })
+
+    return True
 
 
 def create_order(order_data: Dict[str, Any]) -> Dict[str, Any]:

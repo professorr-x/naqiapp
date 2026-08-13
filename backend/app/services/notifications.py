@@ -6,7 +6,7 @@ Handles push notifications via Firebase Cloud Messaging (FCM)
 
 from typing import Dict, Any, List
 from app.firebase_admin import send_fcm_multicast
-from app.database import get_user_device_tokens, deactivate_device_token
+from app.database import get_user_device_tokens, deactivate_device_token, get_user_by_id
 import logging
 
 logger = logging.getLogger(__name__)
@@ -14,21 +14,41 @@ logger = logging.getLogger(__name__)
 
 # Notification templates for different order statuses
 NOTIFICATION_TEMPLATES = {
-    "confirmed": {
-        "title": "Order Confirmed!",
-        "body": "Your order #{order_id_short} has been confirmed. Delivery on {delivery_date} {time_window}."
+    "en": {
+        "confirmed": {
+            "title": "Order Confirmed!",
+            "body": "Your order #{order_id_short} has been confirmed. Delivery on {delivery_date} {time_window}."
+        },
+        "dispatched": {
+            "title": "Order Dispatched!",
+            "body": "Your order #{order_id_short} is on the way. Expected {time_window}."
+        },
+        "delivered": {
+            "title": "Order Delivered!",
+            "body": "Your order #{order_id_short} has been delivered. Enjoy your fresh water!"
+        },
+        "cancelled": {
+            "title": "Order Cancelled",
+            "body": "Your order #{order_id_short} has been cancelled."
+        }
     },
-    "dispatched": {
-        "title": "Order Dispatched!",
-        "body": "Your order #{order_id_short} is on the way. Expected {time_window}."
-    },
-    "delivered": {
-        "title": "Order Delivered!",
-        "body": "Your order #{order_id_short} has been delivered. Enjoy your fresh water!"
-    },
-    "cancelled": {
-        "title": "Order Cancelled",
-        "body": "Your order #{order_id_short} has been cancelled."
+    "ar": {
+        "confirmed": {
+            "title": "تم تأكيد الطلب!",
+            "body": "تم تأكيد طلبك #{order_id_short}. التوصيل في {delivery_date} {time_window}."
+        },
+        "dispatched": {
+            "title": "تم إرسال الطلب!",
+            "body": "طلبك #{order_id_short} في الطريق. متوقع {time_window}."
+        },
+        "delivered": {
+            "title": "تم تسليم الطلب!",
+            "body": "تم تسليم طلبك #{order_id_short}. استمتع بمياهك النقية!"
+        },
+        "cancelled": {
+            "title": "تم إلغاء الطلب",
+            "body": "تم إلغاء طلبك #{order_id_short}."
+        }
     }
 }
 
@@ -36,7 +56,8 @@ NOTIFICATION_TEMPLATES = {
 def get_order_notification_template(
     status: str,
     order_id: str,
-    order_data: Dict[str, Any]
+    order_data: Dict[str, Any],
+    language: str = 'en'
 ) -> Dict[str, Any]:
     """
     Generate notification template for order status update
@@ -45,11 +66,14 @@ def get_order_notification_template(
         status: Order status (confirmed, dispatched, delivered, cancelled)
         order_id: Full order ID
         order_data: Order document data
+        language: Preferred language ('en' or 'ar'), defaults to 'en'
 
     Returns:
         dict: Contains 'title', 'body', and 'data' for the notification
     """
-    template = NOTIFICATION_TEMPLATES.get(status)
+    # Get language templates, fall back to English if language not found
+    lang_templates = NOTIFICATION_TEMPLATES.get(language, NOTIFICATION_TEMPLATES.get('en'))
+    template = lang_templates.get(status)
 
     if not template:
         return None
@@ -114,8 +138,13 @@ async def send_order_status_notification(
             print(f"[DEBUG] No active device tokens for user {user_id}")
             return False
 
+        # Get user's language preference
+        user = get_user_by_id(user_id)
+        language = user.get('preferred_language', 'en') if user else 'en'
+        print(f"[DEBUG] User language preference: {language}")
+
         # Generate notification content
-        notification = get_order_notification_template(status, order_id, order_data)
+        notification = get_order_notification_template(status, order_id, order_data, language)
 
         if not notification:
             logger.warning(f"No notification template for status: {status}")
@@ -190,13 +219,21 @@ async def send_chat_message_notification(
             print(f"[DEBUG] No active device tokens for user {user_id}")
             return False
 
+        # Get user's language preference
+        user = get_user_by_id(user_id)
+        language = user.get('preferred_language', 'en') if user else 'en'
+        print(f"[DEBUG] User language preference: {language}")
+
         # Truncate message preview if too long
         max_preview_length = 100
         if len(message_preview) > max_preview_length:
             message_preview = message_preview[:max_preview_length] + "..."
 
-        # Create notification payload
-        title = f"New message from {sender_name}"
+        # Create notification payload with localized title
+        if language == 'ar':
+            title = f"رسالة جديدة من {sender_name}"
+        else:
+            title = f"New message from {sender_name}"
         body = message_preview
 
         # Data payload for deep linking

@@ -35,3 +35,7 @@ class AdminUserCreate(BaseModel):
     password: str
     display_name: str
     # Admins don't need phone initially
+
+
+class UpdateLanguageRequest(BaseModel):
+    language: str  # "en" or "ar"
