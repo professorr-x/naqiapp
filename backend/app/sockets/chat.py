@@ -21,6 +21,7 @@ from app.database import (
     assign_admin_to_session,
     get_session_messages
 )
+from app.services.notifications import send_chat_message_notification
 
 
 def serialize_firestore_data(data):
@@ -271,6 +272,36 @@ async def send_message(sid, data):
             'has_new_message': True
         }, room='admins')
 
+    # Send push notification if message from admin to customer
+    if user_info['role'] == 'admin':
+        try:
+            # Get session to find customer
+            session = get_chat_session(session_id)
+            if session and session.get('customer_uid'):
+                customer_uid = session['customer_uid']
+
+                # Get customer's Firestore user document
+                customer_data = get_user_by_firebase_uid(customer_uid)
+
+                if customer_data and customer_data.get('id'):
+                    customer_user_id = customer_data['id']
+                    admin_name = sender_data.get('display_name', 'Admin')
+
+                    # Send push notification
+                    print(f"[DEBUG] Sending chat notification to customer {customer_user_id} from admin {admin_name}")
+                    await send_chat_message_notification(
+                        user_id=customer_user_id,
+                        sender_name=admin_name,
+                        message_preview=content,
+                        session_id=session_id
+                    )
+                else:
+                    print(f"[DEBUG] Customer user data not found for firebase_uid: {customer_uid}")
+            else:
+                print(f"[DEBUG] Session or customer_uid not found for session {session_id}")
+        except Exception as e:
+            print(f"[ERROR] Failed to send chat notification: {str(e)}")
+
 
 @sio.event
 async def send_image(sid, data):
@@ -316,6 +347,27 @@ async def send_image(sid, data):
         'created_at': message['created_at'].isoformat()
     }, room=session_id)
 
+    # Send push notification if message from admin to customer
+    if user_info['role'] == 'admin':
+        try:
+            session = get_chat_session(session_id)
+            if session and session.get('customer_uid'):
+                customer_uid = session['customer_uid']
+                customer_data = get_user_by_firebase_uid(customer_uid)
+
+                if customer_data and customer_data.get('id'):
+                    customer_user_id = customer_data['id']
+                    admin_name = sender_data.get('display_name', 'Admin')
+
+                    await send_chat_message_notification(
+                        user_id=customer_user_id,
+                        sender_name=admin_name,
+                        message_preview="Sent an image",
+                        session_id=session_id
+                    )
+        except Exception as e:
+            print(f"[ERROR] Failed to send chat notification for image: {str(e)}")
+
 
 @sio.event
 async def send_location(sid, data):
@@ -358,3 +410,24 @@ async def send_location(sid, data):
         'location': location,
         'created_at': message['created_at'].isoformat()
     }, room=session_id)
+
+    # Send push notification if message from admin to customer
+    if user_info['role'] == 'admin':
+        try:
+            session = get_chat_session(session_id)
+            if session and session.get('customer_uid'):
+                customer_uid = session['customer_uid']
+                customer_data = get_user_by_firebase_uid(customer_uid)
+
+                if customer_data and customer_data.get('id'):
+                    customer_user_id = customer_data['id']
+                    admin_name = sender_data.get('display_name', 'Admin')
+
+                    await send_chat_message_notification(
+                        user_id=customer_user_id,
+                        sender_name=admin_name,
+                        message_preview="Shared a location",
+                        session_id=session_id
+                    )
+        except Exception as e:
+            print(f"[ERROR] Failed to send chat notification for location: {str(e)}")

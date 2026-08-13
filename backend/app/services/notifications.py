@@ -158,3 +158,88 @@ async def send_order_status_notification(
     except Exception as e:
         logger.error(f"Failed to send notification: {str(e)}")
         return False
+
+
+async def send_chat_message_notification(
+    user_id: str,
+    sender_name: str,
+    message_preview: str,
+    session_id: str
+) -> bool:
+    """
+    Send push notification for new chat message
+
+    Args:
+        user_id: Firestore user document ID (recipient)
+        sender_name: Name of the message sender (e.g., "Admin", "Support")
+        message_preview: Preview of the message content (truncated)
+        session_id: Chat session ID for deep linking
+
+    Returns:
+        bool: True if notification sent successfully, False otherwise
+    """
+    try:
+        print(f"[DEBUG] send_chat_message_notification called - user_id: {user_id}, sender: {sender_name}")
+
+        # Get user's active device tokens
+        device_tokens = get_user_device_tokens(user_id)
+        print(f"[DEBUG] Retrieved {len(device_tokens) if device_tokens else 0} device tokens for user {user_id}")
+
+        if not device_tokens:
+            logger.info(f"No active device tokens for user {user_id}")
+            print(f"[DEBUG] No active device tokens for user {user_id}")
+            return False
+
+        # Truncate message preview if too long
+        max_preview_length = 100
+        if len(message_preview) > max_preview_length:
+            message_preview = message_preview[:max_preview_length] + "..."
+
+        # Create notification payload
+        title = f"New message from {sender_name}"
+        body = message_preview
+
+        # Data payload for deep linking
+        data = {
+            "type": "chat_message",
+            "session_id": session_id,
+            "deep_link": "/chat"
+        }
+
+        # Send FCM notification
+        logger.info(f"Sending chat notification to user {user_id} from {sender_name}")
+        print(f"[DEBUG] Sending chat notification to user {user_id}")
+
+        response = send_fcm_multicast(
+            tokens=device_tokens,
+            title=title,
+            body=body,
+            data=data
+        )
+
+        # Log results
+        logger.info(f"Chat notification sent: {response.success_count} success, {response.failure_count} failed")
+        print(f"[DEBUG] FCM Response: {response.success_count} success, {response.failure_count} failed")
+
+        # Log individual token results
+        for idx, resp in enumerate(response.responses):
+            token_preview = device_tokens[idx][:20] + "..." if len(device_tokens[idx]) > 20 else device_tokens[idx]
+            if resp.success:
+                print(f"[DEBUG] ✓ Token {idx+1}/{len(device_tokens)} ({token_preview}): SUCCESS")
+            else:
+                print(f"[DEBUG] ✗ Token {idx+1}/{len(device_tokens)} ({token_preview}): FAILED - {resp.exception if hasattr(resp, 'exception') else 'Unknown error'}")
+
+        # Cleanup failed tokens
+        if response.failure_count > 0:
+            for idx, resp in enumerate(response.responses):
+                if not resp.success:
+                    failed_token = device_tokens[idx]
+                    logger.warning(f"Deactivating failed token: {failed_token}")
+                    deactivate_device_token(failed_token)
+
+        return response.success_count > 0
+
+    except Exception as e:
+        logger.error(f"Failed to send chat notification: {str(e)}")
+        print(f"[DEBUG] Exception in send_chat_message_notification: {str(e)}")
+        return False
