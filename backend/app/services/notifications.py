@@ -230,10 +230,11 @@ async def send_chat_message_notification(
             message_preview = message_preview[:max_preview_length] + "..."
 
         # Create notification payload with localized title
+        # Always show "Leo" as the sender name instead of admin name
         if language == 'ar':
-            title = f"رسالة جديدة من {sender_name}"
+            title = "رسالة جديدة من ليو"
         else:
-            title = f"New message from {sender_name}"
+            title = "New message from Leo"
         body = message_preview
 
         # Data payload for deep linking

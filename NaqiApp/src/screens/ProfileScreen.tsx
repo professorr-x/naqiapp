@@ -11,19 +11,22 @@ import {
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {useNavigation} from '@react-navigation/native';
 import {useTranslation} from 'react-i18next';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {useAuth} from '../contexts/AuthContext';
 import {COLORS} from '../constants';
 import auth from '@react-native-firebase/auth';
+import {updateUserLanguage} from '../services/api';
 
 const ProfileScreen: React.FC = () => {
   const navigation = useNavigation();
-  const {t} = useTranslation();
+  const {t, i18n} = useTranslation();
   const {user, signOut} = useAuth();
   const [showPasswordChange, setShowPasswordChange] = useState(false);
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [languageLoading, setLanguageLoading] = useState(false);
 
   const handleLogout = async () => {
     Alert.alert(
@@ -105,6 +108,35 @@ const ProfileScreen: React.FC = () => {
     }
   };
 
+  const handleLanguageChange = async (language: 'en' | 'ar') => {
+    if (languageLoading) return;
+
+    try {
+      setLanguageLoading(true);
+
+      // Update i18n language
+      await i18n.changeLanguage(language);
+
+      // Save to AsyncStorage
+      await AsyncStorage.setItem('user_language', language);
+
+      // Update backend preference
+      try {
+        await updateUserLanguage(language);
+      } catch (apiError) {
+        console.error('Failed to update language on backend:', apiError);
+        // Continue anyway - local change is more important
+      }
+
+      Alert.alert('Success', t('profile.languageChanged'));
+    } catch (error) {
+      console.error('Language change error:', error);
+      Alert.alert('Error', 'Failed to change language');
+    } finally {
+      setLanguageLoading(false);
+    }
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
@@ -133,6 +165,49 @@ const ProfileScreen: React.FC = () => {
           </Text>
         </View>
 
+        <View style={styles.languageSection}>
+          <Text style={styles.label}>{t('profile.language')}</Text>
+          <View style={styles.languageButtons}>
+            <TouchableOpacity
+              style={[
+                styles.languageButton,
+                i18n.language === 'en' && styles.languageButtonActive,
+              ]}
+              onPress={() => handleLanguageChange('en')}
+              disabled={languageLoading}>
+              <Text
+                style={[
+                  styles.languageButtonText,
+                  i18n.language === 'en' && styles.languageButtonTextActive,
+                ]}>
+                {t('profile.english')}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.languageButton,
+                i18n.language === 'ar' && styles.languageButtonActive,
+              ]}
+              onPress={() => handleLanguageChange('ar')}
+              disabled={languageLoading}>
+              <Text
+                style={[
+                  styles.languageButtonText,
+                  i18n.language === 'ar' && styles.languageButtonTextActive,
+                ]}>
+                {t('profile.arabic')}
+              </Text>
+            </TouchableOpacity>
+          </View>
+          {languageLoading && (
+            <ActivityIndicator
+              size="small"
+              color={COLORS.primary}
+              style={styles.languageLoader}
+            />
+          )}
+        </View>
+
         <TouchableOpacity
           style={styles.optionButton}
           onPress={() => setShowPasswordChange(!showPasswordChange)}>
@@ -146,6 +221,8 @@ const ProfileScreen: React.FC = () => {
             <TextInput
               style={styles.input}
               placeholder={t('profile.currentPassword')}
+              placeholderTextColor={COLORS.gray}
+              color="#333"
               value={currentPassword}
               onChangeText={setCurrentPassword}
               secureTextEntry
@@ -154,6 +231,8 @@ const ProfileScreen: React.FC = () => {
             <TextInput
               style={styles.input}
               placeholder={t('profile.newPassword')}
+              placeholderTextColor={COLORS.gray}
+              color="#333"
               value={newPassword}
               onChangeText={setNewPassword}
               secureTextEntry
@@ -162,6 +241,8 @@ const ProfileScreen: React.FC = () => {
             <TextInput
               style={styles.input}
               placeholder={t('auth.confirmPassword')}
+              placeholderTextColor={COLORS.gray}
+              color="#333"
               value={confirmPassword}
               onChangeText={setConfirmPassword}
               secureTextEntry
@@ -235,6 +316,42 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: COLORS.black,
     fontWeight: '500',
+  },
+  languageSection: {
+    marginBottom: 20,
+    paddingBottom: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.lightGray,
+  },
+  languageButtons: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 10,
+  },
+  languageButton: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: COLORS.gray,
+    backgroundColor: COLORS.white,
+    alignItems: 'center',
+  },
+  languageButtonActive: {
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
+  },
+  languageButtonText: {
+    fontSize: 15,
+    color: COLORS.black,
+    fontWeight: '500',
+  },
+  languageButtonTextActive: {
+    color: COLORS.white,
+  },
+  languageLoader: {
+    marginTop: 10,
   },
   optionButton: {
     backgroundColor: COLORS.primary,
