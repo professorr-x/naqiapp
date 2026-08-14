@@ -4,7 +4,7 @@
  * Manages chat state and provides methods for real-time messaging.
  */
 
-import React, {createContext, useContext, useState, useEffect} from 'react';
+import React, {createContext, useContext, useState, useEffect, useCallback} from 'react';
 import {useAuth} from './AuthContext';
 import socketService from '../services/socketService';
 
@@ -43,6 +43,78 @@ export const ChatProvider: React.FC<{children: React.ReactNode}> = ({
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [isConnected, setIsConnected] = useState(false);
 
+  // Setup socket event listeners
+  const setupEventListeners = useCallback(() => {
+    console.log('[ChatContext] Setting up event listeners');
+
+    // Remove any existing listeners first to prevent duplicates
+    socketService.offSessionJoined();
+    socketService.offNewMessage();
+
+    // Listen for session joined event
+    socketService.onSessionJoined((data: any) => {
+      console.log('Session joined:', data);
+      setSessionId(data.session_id);
+      setIsConnected(true);
+
+      // Load message history if available
+      if (data.messages && Array.isArray(data.messages)) {
+        setMessages(data.messages);
+      }
+    });
+
+    // Listen for new messages
+    socketService.onNewMessage((message: Message) => {
+      console.log('New message received:', message);
+      setMessages(prev => [...prev, message]);
+    });
+  }, []);
+
+  // Handle socket reconnection
+  const handleReconnect = useCallback(() => {
+    console.log('[ChatContext] Socket reconnected, re-joining session');
+
+    // Re-setup event listeners after reconnect
+    setupEventListeners();
+
+    // Re-join session
+    socketService.joinSession();
+  }, [setupEventListeners]);
+
+  const connectToChat = useCallback(async () => {
+    if (!user || !idToken) return;
+
+    try {
+      console.log('[ChatContext] Connecting to chat...');
+
+      // Connect to Socket.IO server
+      socketService.connect(idToken);
+
+      // Setup event listeners for the first time
+      setupEventListeners();
+
+      // Listen for reconnection events
+      socketService.onReconnect(handleReconnect);
+
+      // Join session as customer
+      socketService.joinSession();
+    } catch (error) {
+      console.error('Error connecting to chat:', error);
+      setIsConnected(false);
+    }
+  }, [user, idToken, setupEventListeners, handleReconnect]);
+
+  const disconnectFromChat = useCallback(() => {
+    console.log('[ChatContext] Disconnecting from chat');
+    socketService.offSessionJoined();
+    socketService.offNewMessage();
+    socketService.offReconnect();
+    socketService.disconnect();
+    setIsConnected(false);
+    setSessionId(null);
+    setMessages([]);
+  }, []);
+
   useEffect(() => {
     if (user && idToken) {
       connectToChat();
@@ -53,49 +125,7 @@ export const ChatProvider: React.FC<{children: React.ReactNode}> = ({
     return () => {
       disconnectFromChat();
     };
-  }, [user, idToken]);
-
-  const connectToChat = async () => {
-    if (!user || !idToken) return;
-
-    try {
-      // Connect to Socket.IO server
-      socketService.connect(idToken);
-
-      // Listen for session joined event
-      socketService.onSessionJoined((data: any) => {
-        console.log('Session joined:', data);
-        setSessionId(data.session_id);
-        setIsConnected(true);
-
-        // Load message history if available
-        if (data.messages && Array.isArray(data.messages)) {
-          setMessages(data.messages);
-        }
-      });
-
-      // Listen for new messages
-      socketService.onNewMessage((message: Message) => {
-        console.log('New message received:', message);
-        setMessages(prev => [...prev, message]);
-      });
-
-      // Join session as customer
-      socketService.joinSession();
-    } catch (error) {
-      console.error('Error connecting to chat:', error);
-      setIsConnected(false);
-    }
-  };
-
-  const disconnectFromChat = () => {
-    socketService.offSessionJoined();
-    socketService.offNewMessage();
-    socketService.disconnect();
-    setIsConnected(false);
-    setSessionId(null);
-    setMessages([]);
-  };
+  }, [user, idToken, connectToChat, disconnectFromChat]);
 
   const sendTextMessage = (content: string) => {
     if (!isConnected || !sessionId) {

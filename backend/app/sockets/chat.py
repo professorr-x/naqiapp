@@ -239,12 +239,15 @@ async def send_message(sid, data):
     # Get sender info
     sender_data = get_user_by_firebase_uid(user_info['uid'])
 
+    # Use "Leo" as display name for all admin messages
+    sender_name = "Leo" if user_info['role'] == 'admin' else sender_data.get('display_name', 'User')
+
     # Save message to Firestore
     message = create_message(
         session_id=session_id,
         sender_uid=user_info['uid'],
         sender_role=user_info['role'],
-        sender_name=sender_data.get('display_name', 'User'),
+        sender_name=sender_name,
         message_type='text',
         content=content
     )
@@ -257,7 +260,7 @@ async def send_message(sid, data):
         'message_id': message['message_id'],
         'sender_uid': user_info['uid'],
         'sender_role': user_info['role'],
-        'sender_name': sender_data.get('display_name', 'User'),
+        'sender_name': sender_name,
         'message_type': 'text',
         'content': content,
         'created_at': message['created_at'].isoformat()
@@ -325,11 +328,14 @@ async def send_image(sid, data):
 
     sender_data = get_user_by_firebase_uid(user_info['uid'])
 
+    # Use "Leo" as display name for all admin messages
+    sender_name = "Leo" if user_info['role'] == 'admin' else sender_data.get('display_name', 'User')
+
     message = create_message(
         session_id=session_id,
         sender_uid=user_info['uid'],
         sender_role=user_info['role'],
-        sender_name=sender_data.get('display_name', 'User'),
+        sender_name=sender_name,
         message_type='image',
         content='',
         image_url=image_url
@@ -341,7 +347,7 @@ async def send_image(sid, data):
         'message_id': message['message_id'],
         'sender_uid': user_info['uid'],
         'sender_role': user_info['role'],
-        'sender_name': sender_data.get('display_name', 'User'),
+        'sender_name': sender_name,
         'message_type': 'image',
         'image_url': image_url,
         'created_at': message['created_at'].isoformat()
@@ -389,11 +395,14 @@ async def send_location(sid, data):
 
     sender_data = get_user_by_firebase_uid(user_info['uid'])
 
+    # Use "Leo" as display name for all admin messages
+    sender_name = "Leo" if user_info['role'] == 'admin' else sender_data.get('display_name', 'User')
+
     message = create_message(
         session_id=session_id,
         sender_uid=user_info['uid'],
         sender_role=user_info['role'],
-        sender_name=sender_data.get('display_name', 'User'),
+        sender_name=sender_name,
         message_type='location',
         content='',
         location=location
@@ -405,7 +414,7 @@ async def send_location(sid, data):
         'message_id': message['message_id'],
         'sender_uid': user_info['uid'],
         'sender_role': user_info['role'],
-        'sender_name': sender_data.get('display_name', 'User'),
+        'sender_name': sender_name,
         'message_type': 'location',
         'location': location,
         'created_at': message['created_at'].isoformat()
