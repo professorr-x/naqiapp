@@ -231,4 +231,32 @@ export const revokeTrustedDevice = async (deviceId: string) => {
   return api.delete(`/auth/trusted-devices/${deviceId}`);
 };
 
+// ==================== User Preferences APIs ====================
+
+export const updateUserLanguage = async (language: 'en' | 'ar') => {
+  return api.patch('/users/me/language', {language});
+};
+
+// ==================== Twilio Verify APIs ====================
+
+export const sendTwilioVerification = async (
+  phoneNumber: string,
+  locale: string = 'en',
+) => {
+  return api.post(`/auth/verify/send?phone_number=${encodeURIComponent(phoneNumber)}&locale=${locale}`);
+};
+
+export const checkTwilioVerification = async (
+  phoneNumber: string,
+  code: string,
+) => {
+  return api.post(`/auth/verify/check?phone_number=${encodeURIComponent(phoneNumber)}&code=${code}`);
+};
+
+export const isIraqiNumber = (phoneNumber: string): boolean => {
+  // Check if phone number is from Iraq (+964)
+  const normalized = phoneNumber.startsWith('+') ? phoneNumber : `+${phoneNumber}`;
+  return normalized.startsWith('+964');
+};
+
 export default api;

@@ -23,14 +23,20 @@ const LoginOTPScreen: React.FC = () => {
   const {i18n, t} = useTranslation();
   const route = useRoute<LoginOTPRouteProp>();
   const navigation = useNavigation<NavigationProp>();
-  const {sendLoginOTP, verifyPhoneLoginOTP} = useAuth();
+  const {sendLoginOTP, verifyPhoneLoginOTP, sendTwilioOTP, verifyTwilioOTP, isIraqiNumber} = useAuth();
 
   const [otp, setOTP] = useState('');
   const [loading, setLoading] = useState(false);
   const [rememberDevice, setRememberDevice] = useState(true);
   const [confirmation, setConfirmation] = useState<any>(null);
+  const [useTwilio, setUseTwilio] = useState(false);
 
   const {phoneNumber, sessionId, phoneNumberMasked} = route.params;
+
+  useEffect(() => {
+    // Check if this is an Iraqi number
+    setUseTwilio(isIraqiNumber(phoneNumber));
+  }, [phoneNumber]);
 
   useEffect(() => {
     // Send OTP automatically when screen loads
@@ -40,9 +46,21 @@ const LoginOTPScreen: React.FC = () => {
   const sendOTPCode = async () => {
     try {
       setLoading(true);
-      // Send OTP to the phone number using Firebase
-      const confirmationResult = await sendLoginOTP(phoneNumber);
-      setConfirmation(confirmationResult);
+      console.log('=== SENDING OTP ===');
+      console.log('Phone number:', phoneNumber);
+      console.log('Masked number:', phoneNumberMasked);
+      console.log('Using Twilio:', useTwilio);
+
+      if (useTwilio) {
+        // Use Twilio Verify for Iraqi numbers
+        await sendTwilioOTP(phoneNumber);
+        console.log('Twilio OTP sent successfully');
+      } else {
+        // Use Firebase for other countries
+        const confirmationResult = await sendLoginOTP(phoneNumber);
+        console.log('Firebase OTP sent successfully, verificationId:', confirmationResult.verificationId);
+        setConfirmation(confirmationResult);
+      }
 
       Alert.alert(
         i18n.language === 'ar' ? 'إرسال رمز التحقق' : 'OTP Sent',
@@ -50,13 +68,28 @@ const LoginOTPScreen: React.FC = () => {
           ? `تم إرسال رمز التحقق إلى ${phoneNumberMasked}`
           : `Verification code sent to ${phoneNumberMasked}`,
       );
-    } catch (error) {
-      console.error('Error sending OTP:', error);
+    } catch (error: any) {
+      console.error('=== OTP SEND ERROR ===');
+      console.error('Error code:', error.code);
+      console.error('Error message:', error.message);
+      console.error('Full error:', JSON.stringify(error, null, 2));
+
+      let errorMessage = 'Failed to send verification code';
+      if (error.code === 'auth/invalid-phone-number') {
+        errorMessage = 'Invalid phone number format';
+      } else if (error.code === 'auth/too-many-requests') {
+        errorMessage = 'Too many requests. Please try again later';
+      } else if (error.code === 'auth/quota-exceeded') {
+        errorMessage = 'SMS quota exceeded. Please contact support';
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+
       Alert.alert(
         i18n.language === 'ar' ? 'خطأ' : 'Error',
         i18n.language === 'ar'
           ? 'فشل إرسال رمز التحقق'
-          : 'Failed to send verification code',
+          : errorMessage,
       );
     } finally {
       setLoading(false);
@@ -74,7 +107,8 @@ const LoginOTPScreen: React.FC = () => {
       return;
     }
 
-    if (!confirmation) {
+    // For Firebase, we need confirmation. For Twilio, we don't
+    if (!useTwilio && !confirmation) {
       Alert.alert(
         i18n.language === 'ar' ? 'خطأ' : 'Error',
         i18n.language === 'ar'
@@ -86,15 +120,44 @@ const LoginOTPScreen: React.FC = () => {
 
     setLoading(true);
     try {
-      await verifyPhoneLoginOTP(sessionId, confirmation, otp, rememberDevice);
+      if (useTwilio) {
+        // Verify with Twilio
+        await verifyTwilioOTP(phoneNumber, otp);
+        console.log('Twilio OTP verified successfully');
+        // For Twilio, we also need to call the backend to complete login
+        await verifyLoginOTP(sessionId, rememberDevice);
+      } else {
+        // Verify with Firebase
+        await verifyPhoneLoginOTP(sessionId, confirmation, otp, rememberDevice);
+      }
       // User is now logged in, navigation will be handled by auth state
     } catch (error: any) {
       console.error('Error verifying OTP:', error);
+
+      // Provide specific error messages based on error type
+      let errorMessage = 'Invalid verification code';
+      let errorMessageAr = 'رمز التحقق غير صحيح';
+
+      if (error.message) {
+        const msg = error.message.toLowerCase();
+        if (msg.includes('session expired') || msg.includes('invalid session')) {
+          errorMessage = 'Session expired. Please try logging in again.';
+          errorMessageAr = 'انتهت صلاحية الجلسة. يرجى تسجيل الدخول مرة أخرى.';
+        } else if (msg.includes('backend verification failed')) {
+          errorMessage = 'Verification failed. Please try again.';
+          errorMessageAr = 'فشل التحقق. يرجى المحاولة مرة أخرى.';
+        } else if (error.code === 'auth/invalid-verification-code') {
+          errorMessage = 'Invalid verification code. Please check and try again.';
+          errorMessageAr = 'رمز التحقق غير صحيح. يرجى التحقق والمحاولة مرة أخرى.';
+        } else if (error.code === 'auth/code-expired') {
+          errorMessage = 'Verification code expired. Please request a new one.';
+          errorMessageAr = 'انتهت صلاحية رمز التحقق. يرجى طلب رمز جديد.';
+        }
+      }
+
       Alert.alert(
         i18n.language === 'ar' ? 'خطأ' : 'Error',
-        i18n.language === 'ar'
-          ? 'رمز التحقق غير صحيح'
-          : 'Invalid verification code',
+        i18n.language === 'ar' ? errorMessageAr : errorMessage,
       );
     } finally {
       setLoading(false);
@@ -116,6 +179,7 @@ const LoginOTPScreen: React.FC = () => {
         <TextInput
           style={styles.input}
           placeholder="000000"
+          placeholderTextColor={COLORS.gray}
           keyboardType="number-pad"
           value={otp}
           onChangeText={setOTP}

@@ -15,10 +15,14 @@ import {
   loginWithPhonePassword,
   sendLoginOTP,
   verifyLoginOTPPhone,
+  sendTwilioVerification,
+  checkTwilioVerification,
+  isIraqiNumber,
 } from '../services/api';
 import {getDeviceFingerprint, getDeviceInfo} from '../utils/deviceFingerprint';
 import notificationService, {NotificationData} from '../services/notificationService';
 import {navigate} from '../navigation/AppNavigator';
+import i18n from '../i18n';
 
 interface AuthContextType {
   user: FirebaseAuthTypes.User | null;
@@ -110,6 +114,10 @@ interface AuthContextType {
     code: string,
     rememberDevice: boolean,
   ) => Promise<void>;
+  // Twilio Verify methods (for Iraqi numbers)
+  sendTwilioOTP: (phoneNumber: string) => Promise<void>;
+  verifyTwilioOTP: (phoneNumber: string, code: string) => Promise<void>;
+  isIraqiNumber: (phoneNumber: string) => boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -173,7 +181,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({children}) => {
         setIdToken(token);
         await AsyncStorage.setItem('firebase_token', token);
 
-        // Fetch user role from backend
+        // Fetch user role and language preference from backend
         try {
           const response = await axios.get(`${Config.API_BASE_URL}/users/me`, {
             headers: {
@@ -181,6 +189,18 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({children}) => {
             },
           });
           setUserRole(response.data.role || 'user');
+
+          // Sync language preference from backend if available
+          const backendLanguage = response.data.preferred_language;
+          if (backendLanguage && (backendLanguage === 'en' || backendLanguage === 'ar')) {
+            const currentLanguage = await AsyncStorage.getItem('user_language');
+            if (currentLanguage !== backendLanguage) {
+              // Backend preference takes precedence
+              await AsyncStorage.setItem('user_language', backendLanguage);
+              i18n.changeLanguage(backendLanguage);
+              console.log(`Language synced from backend: ${backendLanguage}`);
+            }
+          }
         } catch (error) {
           console.error('Error fetching user role:', error);
           setUserRole('user'); // Default to user
@@ -611,6 +631,32 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({children}) => {
     }
   };
 
+  // ==================== Twilio Verify Methods ====================
+
+  const sendTwilioOTP = async (phoneNumber: string) => {
+    const formattedPhone = phoneNumber.startsWith('+')
+      ? phoneNumber
+      : `+${phoneNumber}`;
+
+    // Get user's language preference
+    const language = await AsyncStorage.getItem('user_language');
+    const locale = language === 'ar' ? 'ar' : 'en';
+
+    await sendTwilioVerification(formattedPhone, locale);
+  };
+
+  const verifyTwilioOTP = async (phoneNumber: string, code: string) => {
+    const formattedPhone = phoneNumber.startsWith('+')
+      ? phoneNumber
+      : `+${phoneNumber}`;
+
+    await checkTwilioVerification(formattedPhone, code);
+  };
+
+  const checkIsIraqiNumber = (phoneNumber: string): boolean => {
+    return isIraqiNumber(phoneNumber);
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -639,6 +685,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({children}) => {
         verifyPhoneSignup,
         signInWithPhone,
         verifyPhoneLoginOTP,
+        // Twilio Verify (for Iraqi numbers)
+        sendTwilioOTP,
+        verifyTwilioOTP,
+        isIraqiNumber: checkIsIraqiNumber,
       }}>
       {children}
     </AuthContext.Provider>
