@@ -1012,3 +1012,111 @@ async def revoke_trusted_device(
         success=True,
         message="Device revoked successfully"
     )
+
+
+# ==================== Twilio Verify Endpoints ====================
+
+@router.post("/verify/send")
+async def send_verification_code(phone_number: str, locale: str = 'en'):
+    """
+    Send OTP via Twilio Verify (for restricted countries like Iraq)
+
+    Twilio Verify handles:
+    - OTP generation (6-digit)
+    - SMS delivery
+    - Rate limiting
+    - Automatic expiration (10 min)
+    """
+    from app.services.twilio_verify import twilio_verify_service
+
+    # Check if Twilio Verify is enabled
+    if not twilio_verify_service.enabled:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Twilio Verify service is not available. Use Firebase for this number."
+        )
+
+    # Normalize phone number
+    if not phone_number.startswith('+'):
+        phone_number = f"+{phone_number}"
+
+    # Check if this number should use Twilio
+    if not twilio_verify_service.should_use_verify(phone_number):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This phone number should use Firebase authentication"
+        )
+
+    try:
+        result = twilio_verify_service.send_verification(phone_number, 'sms', locale)
+
+        if not result['success']:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=result['error']
+            )
+
+        return {
+            'success': True,
+            'message': 'Verification code sent',
+            'phone_masked': mask_phone_number(phone_number),
+            'channel': result['channel']
+        }
+
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to send verification: {str(e)}"
+        )
+
+
+@router.post("/verify/check")
+async def check_verification_code(phone_number: str, code: str):
+    """
+    Verify OTP code via Twilio Verify
+
+    Returns success if code is valid
+    """
+    from app.services.twilio_verify import twilio_verify_service
+
+    # Check if Twilio Verify is enabled
+    if not twilio_verify_service.enabled:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Twilio Verify service is not available"
+        )
+
+    # Normalize phone number
+    if not phone_number.startswith('+'):
+        phone_number = f"+{phone_number}"
+
+    try:
+        result = twilio_verify_service.check_verification(phone_number, code)
+
+        if not result['valid']:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=result['error'] or "Invalid verification code"
+            )
+
+        return {
+            'success': True,
+            'message': 'Phone number verified',
+            'status': result['status']
+        }
+
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to verify code: {str(e)}"
+        )
