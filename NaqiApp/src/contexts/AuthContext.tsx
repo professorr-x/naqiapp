@@ -482,13 +482,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({children}) => {
       countryCode,
     );
 
-    // Send OTP to phone number for verification
-    const confirmation = await auth().signInWithPhoneNumber(formattedPhone);
+    // Send OTP via Twilio Verify instead of Firebase (avoids iOS reCAPTCHA requirement)
+    const language = await AsyncStorage.getItem('user_language');
+    const locale = language === 'ar' ? 'ar' : 'en';
+    await sendTwilioVerification(formattedPhone, locale);
 
     return {
       sessionId: response.data.session_id,
       userId: response.data.user_id,
-      confirmation,
+      confirmation: null, // No Firebase confirmation needed for Twilio
       phoneNumber: formattedPhone,
       password, // Store password to sign in after OTP verification
     };
@@ -496,37 +498,18 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({children}) => {
 
   const verifyPhoneSignup = async (
     sessionId: string,
-    confirmation: FirebaseAuthTypes.ConfirmationResult,
+    confirmation: FirebaseAuthTypes.ConfirmationResult | null,
     code: string,
     rememberDevice: boolean,
     phoneNumber: string,
     password: string,
   ) => {
-    // Verify OTP and link phone to the email/password account
-    const credential = auth.PhoneAuthProvider.credential(
-      confirmation.verificationId,
-      code,
-    );
+    // Verify OTP with Twilio instead of Firebase
+    await checkTwilioVerification(phoneNumber, code);
 
-    // Sign in with phone number first to verify the OTP
-    await auth().signInWithCredential(credential);
-
-    // Then sign in with email/password to get the full account
+    // Sign in with email/password (backend already created the user)
     const phoneEmail = `${phoneNumber.replace('+', '')}@naqi.app`;
     await auth().signInWithEmailAndPassword(phoneEmail, password);
-
-    // Link phone credential to the email/password account
-    const currentUser = auth().currentUser;
-    if (currentUser) {
-      try {
-        await currentUser.linkWithCredential(credential);
-      } catch (error: any) {
-        // If phone already linked, that's okay
-        if (error.code !== 'auth/credential-already-in-use') {
-          console.log('Phone already linked, continuing...');
-        }
-      }
-    }
 
     // Get fresh Firebase token and save to AsyncStorage
     const user = auth().currentUser;
@@ -538,7 +521,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({children}) => {
     // Notify backend to mark phone as verified and trust device
     await verifyPhoneAfterSignup(sessionId, rememberDevice);
 
-    // Phone is now verified and linked to the account
+    // Phone is now verified and account is ready
   };
 
   const signInWithPhone = async (

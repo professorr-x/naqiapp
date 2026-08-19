@@ -34,7 +34,7 @@ export type RootStackParamList = {
     isNewUser: boolean;
   };
   OTPVerification: {
-    confirmation: FirebaseAuthTypes.ConfirmationResult;
+    confirmation?: FirebaseAuthTypes.ConfirmationResult | null;
     phoneNumber: string;
     sessionId?: string;
     password?: string;
@@ -44,9 +44,11 @@ export type RootStackParamList = {
   MainTabs: undefined;
   OrderType: undefined;
   Quantity: {orderType: string};
-  Delivery: {orderType: string; quantity: number};
-  Summary: {order: Partial<Order>};
+  Delivery: {orderType: string; quantity: number; isReorder?: boolean};
+  Summary: {order: Partial<Order>; isReorder?: boolean};
   HowItWorks: undefined;
+  OrderDetails: {orderId: string};
+  MetaSDKTest: undefined;
 };
 
 // Bottom Tab Navigation Props
@@ -60,9 +62,9 @@ export type ChatScreenNavigationProp = BottomTabNavigationProp<
   'Chat'
 >;
 
-export type OrderHistoryScreenNavigationProp = BottomTabNavigationProp<
-  BottomTabParamList,
-  'OrderHistory'
+export type OrderHistoryScreenNavigationProp = CompositeNavigationProp<
+  BottomTabNavigationProp<BottomTabParamList, 'OrderHistory'>,
+  NativeStackNavigationProp<RootStackParamList>
 >;
 
 export type ProfileScreenNavigationProp = BottomTabNavigationProp<
