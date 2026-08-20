@@ -66,6 +66,10 @@ interface AuthContextType {
     code: string,
     rememberDevice: boolean,
   ) => Promise<void>;
+  verifyLoginOTP: (
+    sessionId: string,
+    rememberDevice: boolean,
+  ) => Promise<void>;
   startForgotPassword: (email: string) => Promise<{
     phoneNumberMasked: string;
     sessionId: string;
@@ -400,6 +404,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({children}) => {
     await verifyLoginOTP(sessionId, rememberDevice);
   };
 
+  const verifyLoginOTPWrapper = async (
+    sessionId: string,
+    rememberDevice: boolean,
+  ) => {
+    // Call backend to verify OTP and trust device
+    await verifyLoginOTP(sessionId, rememberDevice);
+  };
+
   const startForgotPassword = async (email: string) => {
     // Backend now sends OTP via Twilio automatically
     const response = await initiateForgotPassword(email);
@@ -659,6 +671,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({children}) => {
         checkDeviceForLogin,
         sendLoginOTP: sendLoginOTP,
         verifyLoginOTPAndTrust,
+        verifyLoginOTP: verifyLoginOTPWrapper,
         startForgotPassword,
         verifyForgotPasswordOTP,
         resetPassword,
