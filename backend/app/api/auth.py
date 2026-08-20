@@ -96,6 +96,28 @@ def extract_country_code(phone_number: str) -> str:
     return "+964"
 
 
+def normalize_phone_number(phone_number: str, country_code: str) -> str:
+    """
+    Normalize phone number to E.164 format.
+    Handles domestic format with leading 0.
+
+    Examples:
+    - normalize_phone_number("0611298958", "+31") -> "+31611298958"
+    - normalize_phone_number("611298958", "+31") -> "+31611298958"
+    - normalize_phone_number("+31611298958", "+31") -> "+31611298958"
+    """
+    # Already in international format
+    if phone_number.startswith('+'):
+        return phone_number
+
+    # Strip leading 0 (domestic format)
+    if phone_number.startswith('0'):
+        phone_number = phone_number[1:]
+
+    # Combine country code and number
+    return f"{country_code}{phone_number}"
+
+
 # ==================== Sign Up Endpoints ====================
 
 @router.post("/signup/check-phone", response_model=CheckPhoneAvailabilityResponse)
@@ -104,9 +126,7 @@ async def check_phone_availability(request: CheckPhoneAvailabilityRequest):
     Check if phone number is available for registration.
     Call this before showing the signup form.
     """
-    phone_number = request.phone_number
-    if not phone_number.startswith('+'):
-        phone_number = f"{request.country_code}{phone_number}"
+    phone_number = normalize_phone_number(request.phone_number, request.country_code)
 
     try:
         # Check in Firebase Auth
@@ -155,10 +175,8 @@ async def signup_with_phone_password(request: SignUpWithPhonePasswordRequest):
             detail="Password must be at least 8 characters long"
         )
 
-    # Normalize phone number
-    phone_number = request.phone_number
-    if not phone_number.startswith('+'):
-        phone_number = f"{request.country_code}{phone_number}"
+    # Normalize phone number (handles leading 0 in domestic format)
+    phone_number = normalize_phone_number(request.phone_number, request.country_code)
 
     # Check if phone already exists
     if not firebase_admin.verify_phone_number_available(phone_number):
@@ -304,10 +322,8 @@ async def initiate_otp_signup(request: InitiatePhoneSignUpRequest):
     4. Client verifies OTP with Firebase
     5. Client calls /signup/otp-complete with Firebase UID
     """
-    # Normalize phone number
-    phone_number = request.phone_number
-    if not phone_number.startswith('+'):
-        phone_number = f"{request.country_code}{phone_number}"
+    # Normalize phone number (handles leading 0 in domestic format)
+    phone_number = normalize_phone_number(request.phone_number, request.country_code)
 
     # Check if phone already exists
     if not firebase_admin.verify_phone_number_available(phone_number):
@@ -667,10 +683,8 @@ async def login_with_phone_password(request: PhoneLoginRequest):
 
     logger.info(f"[LOGIN] Endpoint called for phone: {request.phone_number}")
 
-    # Normalize phone number
-    phone_number = request.phone_number
-    if not phone_number.startswith('+'):
-        phone_number = f"{request.country_code}{phone_number}"
+    # Normalize phone number (handles leading 0 in domestic format)
+    phone_number = normalize_phone_number(request.phone_number, request.country_code)
 
     logger.info(f"[LOGIN] Normalized phone: {phone_number}")
 
@@ -748,9 +762,8 @@ async def send_otp(request: SendOTPRequest):
     """
     from app.services.twilio_verify import twilio_verify_service
 
-    phone_number = request.phone_number
-    if not phone_number.startswith('+'):
-        phone_number = f"{request.country_code}{phone_number}"
+    # Normalize phone number (handles leading 0 in domestic format)
+    phone_number = normalize_phone_number(request.phone_number, request.country_code)
 
     # Look up user
     firebase_user = firebase_admin.get_user_by_phone_number(phone_number)
@@ -895,10 +908,8 @@ async def initiate_forgot_password(request: InitiateForgotPasswordRequest):
     """
     from app.services.twilio_verify import twilio_verify_service
 
-    # Normalize phone number
-    phone_number = request.phone_number
-    if not phone_number.startswith('+'):
-        phone_number = f"{request.country_code}{phone_number}"
+    # Normalize phone number (handles leading 0 in domestic format)
+    phone_number = normalize_phone_number(request.phone_number, request.country_code)
 
     # Look up user by phone number
     firebase_user = firebase_admin.get_user_by_phone_number(phone_number)
