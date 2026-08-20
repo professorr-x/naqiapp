@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from typing import Dict, Any
+import logging
 from app.middleware.auth import get_current_user
 from app.schemas.user import UserResponse
 from app.schemas.auth import (
@@ -27,6 +28,7 @@ from firebase_admin import auth
 from datetime import datetime, timedelta, timezone
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 @router.get("/me", response_model=UserResponse)
