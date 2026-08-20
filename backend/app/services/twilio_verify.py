@@ -171,10 +171,8 @@ class TwilioVerifyService:
         Returns:
             bool: True if Twilio Verify should be used
         """
-        if not self.enabled:
-            return False
-
-        return self.is_restricted_country(phone_number)
+        # Always use Twilio Verify when enabled (for all countries)
+        return self.enabled
 
 
 # Global instance
