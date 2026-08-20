@@ -205,9 +205,10 @@ export const initiateForgotPassword = async (email: string) => {
   return api.post('/auth/forgot-password/initiate', {email});
 };
 
-export const verifyForgotPasswordOTP = async (sessionId: string) => {
+export const verifyForgotPasswordOTP = async (sessionId: string, otpCode: string) => {
   return api.post('/auth/forgot-password/verify-otp', {
     session_id: sessionId,
+    otp_code: otpCode,
   });
 };
 
@@ -257,6 +258,16 @@ export const isIraqiNumber = (phoneNumber: string): boolean => {
   // Check if phone number is from Iraq (+964)
   const normalized = phoneNumber.startsWith('+') ? phoneNumber : `+${phoneNumber}`;
   return normalized.startsWith('+964');
+};
+
+// ==================== Phone 2FA Linking APIs (Twilio) ====================
+
+export const initiatePhoneLinking = async (phoneNumber: string) => {
+  return api.post(`/auth/link-phone/initiate?phone_number=${encodeURIComponent(phoneNumber)}`);
+};
+
+export const verifyPhoneLinking = async (sessionId: string, otpCode: string) => {
+  return api.post(`/auth/link-phone/verify?session_id=${sessionId}&otp_code=${otpCode}`);
 };
 
 export default api;

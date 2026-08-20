@@ -16,6 +16,7 @@ import {useAuth} from '../contexts/AuthContext';
 import CountryPicker, {Country, CountryCode} from 'react-native-country-picker-modal';
 import {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {RootStackParamList} from '../navigation/types';
+import {COLORS} from '../constants';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Phone2FA'>;
 
@@ -36,26 +37,30 @@ const Phone2FAScreen: React.FC<Props> = ({navigation}) => {
 
     try {
       setLoading(true);
-      const fullPhoneNumber = `+${callingCode}${phoneNumber}`;
+
+      // Remove leading 0 if present (for international format)
+      const normalizedPhone = phoneNumber.startsWith('0')
+        ? phoneNumber.substring(1)
+        : phoneNumber;
+
+      const fullPhoneNumber = `+${callingCode}${normalizedPhone}`;
       console.log('Sending verification code to:', fullPhoneNumber);
 
-      const confirmation = await linkPhoneToAccount(fullPhoneNumber);
-      console.log('Verification code sent successfully');
+      // Link phone via Twilio (backend sends OTP)
+      const {sessionId, phoneNumber: returnedPhone} = await linkPhoneToAccount(fullPhoneNumber);
+      console.log('Verification code sent successfully via Twilio');
 
       navigation.navigate('OTPVerification', {
-        confirmation,
-        phoneNumber: fullPhoneNumber,
+        sessionId,
+        phoneNumber: returnedPhone,
+        verificationType: 'phone_linking',
       });
     } catch (error: any) {
       console.error('Phone verification error:', error);
-      console.error('Error code:', error.code);
-      console.error('Error message:', error.message);
 
       let errorMessage = 'Failed to send verification code';
-      if (error.code === 'auth/invalid-phone-number') {
-        errorMessage = 'Invalid phone number format';
-      } else if (error.code === 'auth/too-many-requests') {
-        errorMessage = 'Too many requests. Please try again later';
+      if (error.response?.data?.detail) {
+        errorMessage = error.response.data.detail;
       } else if (error.message) {
         errorMessage = error.message;
       }
@@ -114,6 +119,7 @@ const Phone2FAScreen: React.FC<Props> = ({navigation}) => {
             <TextInput
               style={styles.phoneInput}
               placeholder={t('auth.enterPhoneNumber')}
+              placeholderTextColor={COLORS.gray}
               keyboardType="phone-pad"
               value={phoneNumber}
               onChangeText={setPhoneNumber}

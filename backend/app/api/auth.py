@@ -655,10 +655,12 @@ async def login_with_phone_password(request: PhoneLoginRequest):
     Login with phone number + password.
     Client should:
     1. Call this to check device trust
-    2. Sign in with Firebase using phone + password
-    3. If OTP required, verify OTP with Firebase
-    4. Call verify-otp endpoint
+    2. If OTP not required, sign in with Firebase using phone email + password
+    3. If OTP required, OTP is sent via Twilio automatically
+    4. Client verifies OTP and calls verify-otp endpoint
     """
+    from app.services.twilio_verify import twilio_verify_service
+
     # Normalize phone number
     phone_number = request.phone_number
     if not phone_number.startswith('+'):
@@ -709,11 +711,21 @@ async def login_with_phone_password(request: PhoneLoginRequest):
         device_fingerprint=request.device_fingerprint
     )
 
+    # Send OTP via Twilio
+    if twilio_verify_service.enabled:
+        result = twilio_verify_service.send_verification(phone_number, 'sms', 'en')
+        if not result['success']:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to send OTP: {result['error']}"
+            )
+
     return PhoneLoginResponse(
         requires_otp=True,
-        message="OTP will be sent to your phone",
+        message="OTP sent to your phone",
         session_id=session['id'],
-        phone_number_masked=mask_phone_number(phone_number)
+        phone_number_masked=mask_phone_number(phone_number),
+        phone_number=phone_number  # Include for frontend to use with Twilio
     )
 
 
@@ -721,9 +733,10 @@ async def login_with_phone_password(request: PhoneLoginRequest):
 async def send_otp(request: SendOTPRequest):
     """
     Initiate OTP-only login (passwordless).
-    Note: Actual OTP sending is done by Firebase on the client side.
-    This endpoint just creates a session for tracking.
+    Sends OTP via Twilio and creates a session for tracking.
     """
+    from app.services.twilio_verify import twilio_verify_service
+
     phone_number = request.phone_number
     if not phone_number.startswith('+'):
         phone_number = f"{request.country_code}{phone_number}"
@@ -756,11 +769,21 @@ async def send_otp(request: SendOTPRequest):
         device_fingerprint='otp_login'
     )
 
+    # Send OTP via Twilio
+    if twilio_verify_service.enabled:
+        result = twilio_verify_service.send_verification(phone_number, 'sms', 'en')
+        if not result['success']:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to send OTP: {result['error']}"
+            )
+
     return SendOTPResponse(
         success=True,
         message="OTP sent to phone number",
         session_id=session['id'],
-        expires_in_seconds=600
+        expires_in_seconds=600,
+        phone_number=phone_number  # Include for frontend
     )
 
 
@@ -829,8 +852,10 @@ async def verify_otp_login(request: VerifyOTPLoginRequest):
 async def initiate_forgot_password(request: InitiateForgotPasswordRequest):
     """
     Initiate forgot password flow.
-    Looks up user and returns masked phone number for OTP.
+    Looks up user, sends OTP via Twilio, and returns masked phone number.
     """
+    from app.services.twilio_verify import twilio_verify_service
+
     # Look up user by email
     firebase_user = firebase_admin.get_user_by_email(request.email)
 
@@ -872,19 +897,30 @@ async def initiate_forgot_password(request: InitiateForgotPasswordRequest):
         device_fingerprint='forgot_password'  # No device tracking for password reset
     )
 
+    # Send OTP via Twilio Verify
+    if twilio_verify_service.enabled:
+        result = twilio_verify_service.send_verification(phone_number, 'sms', 'en')
+        if not result['success']:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to send OTP: {result['error']}"
+            )
+
     return InitiateForgotPasswordResponse(
         success=True,
         phone_number_masked=mask_phone_number(phone_number),
-        session_id=session['id']
+        session_id=session['id'],
+        phone_number=phone_number  # Include full phone number for Twilio verification
     )
 
 
 @router.post("/forgot-password/verify-otp", response_model=VerifyForgotPasswordOTPResponse)
 async def verify_forgot_password_otp(request: VerifyForgotPasswordOTPRequest):
     """
-    Verify OTP for forgot password and generate reset token.
-    Note: Frontend should verify OTP with Firebase first, then call this endpoint.
+    Verify OTP for forgot password via Twilio and generate reset token.
     """
+    from app.services.twilio_verify import twilio_verify_service
+
     # Get OTP session
     session = database.get_otp_session(request.session_id)
 
@@ -911,6 +947,16 @@ async def verify_forgot_password_otp(request: VerifyForgotPasswordOTPRequest):
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid session type"
         )
+
+    # Verify OTP with Twilio
+    if twilio_verify_service.enabled:
+        phone_number = session.get('phone_number')
+        result = twilio_verify_service.check_verification(phone_number, request.otp_code)
+        if not result['valid']:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=result['error'] or "Invalid OTP code"
+            )
 
     # Mark session as verified
     database.mark_otp_verified(request.session_id)
@@ -1012,6 +1058,143 @@ async def revoke_trusted_device(
         success=True,
         message="Device revoked successfully"
     )
+
+
+# ==================== Phone 2FA Linking Endpoints (Twilio) ====================
+
+@router.post("/link-phone/initiate")
+async def initiate_phone_linking(
+    phone_number: str,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """
+    Initiate phone linking for existing user (2FA setup).
+    Sends OTP via Twilio to the phone number.
+    """
+    from app.services.twilio_verify import twilio_verify_service
+
+    # Normalize phone number
+    if not phone_number.startswith('+'):
+        phone_number = f"+{phone_number}"
+
+    # Check if phone is already linked to another account
+    existing_user = firebase_admin.get_user_by_phone_number(phone_number)
+    if existing_user and existing_user['uid'] != current_user['firebase_uid']:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Phone number already linked to another account"
+        )
+
+    # Create OTP session for phone linking
+    session = database.create_otp_session(
+        user_id=current_user['id'],
+        firebase_uid=current_user['firebase_uid'],
+        phone_number=phone_number,
+        session_type='phone_linking',
+        device_fingerprint='phone_linking'
+    )
+
+    # Send OTP via Twilio (default to English)
+    if twilio_verify_service.enabled:
+        result = twilio_verify_service.send_verification(phone_number, 'sms', 'en')
+        if not result['success']:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to send OTP: {result['error']}"
+            )
+
+    return {
+        'success': True,
+        'session_id': session['id'],
+        'phone_number': phone_number,
+        'phone_number_masked': mask_phone_number(phone_number),
+        'message': 'OTP sent to phone number'
+    }
+
+
+@router.post("/link-phone/verify")
+async def verify_phone_linking(
+    session_id: str,
+    otp_code: str,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """
+    Verify OTP and link phone to user account via Twilio.
+    """
+    from app.services.twilio_verify import twilio_verify_service
+
+    # Get OTP session
+    session = database.get_otp_session(session_id)
+
+    if not session:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="OTP session not found"
+        )
+
+    # Verify session belongs to current user
+    if session['firebase_uid'] != current_user['firebase_uid']:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Session does not belong to current user"
+        )
+
+    # Check if session expired
+    expires_at = session.get('expires_at')
+    if expires_at:
+        now = datetime.now(timezone.utc) if (hasattr(expires_at, 'tzinfo') and expires_at.tzinfo) else datetime.utcnow()
+        if expires_at < now:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="OTP session has expired"
+            )
+
+    # Check if session type is correct
+    if session.get('session_type') != 'phone_linking':
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid session type"
+        )
+
+    # Verify OTP with Twilio
+    phone_number = session.get('phone_number')
+    if twilio_verify_service.enabled:
+        result = twilio_verify_service.check_verification(phone_number, otp_code)
+        if not result['valid']:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=result['error'] or "Invalid OTP code"
+            )
+
+    # Update user's phone number in Firebase Auth
+    try:
+        auth.update_user(
+            current_user['firebase_uid'],
+            phone_number=phone_number
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update phone number: {str(e)}"
+        )
+
+    # Update user's phone number in Firestore
+    db = database.get_firestore_db()
+    user_ref = db.collection(database.USERS_COLLECTION).document(current_user['id'])
+    user_ref.update({
+        'phone_number': phone_number,
+        'phone_verified': True,
+        'country_code': extract_country_code(phone_number),
+        'updated_at': database.firestore.SERVER_TIMESTAMP
+    })
+
+    # Mark session as verified
+    database.mark_otp_verified(session_id)
+
+    return {
+        'success': True,
+        'message': 'Phone number linked successfully'
+    }
 
 
 # ==================== Twilio Verify Endpoints ====================

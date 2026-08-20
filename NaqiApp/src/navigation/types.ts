@@ -26,6 +26,7 @@ export type RootStackParamList = {
     sessionId: string;
     phoneNumberMasked: string;
     email: string;
+    phoneNumber: string;
   };
   ResetPassword: {
     resetToken: string;
@@ -34,11 +35,11 @@ export type RootStackParamList = {
     isNewUser: boolean;
   };
   OTPVerification: {
-    confirmation?: FirebaseAuthTypes.ConfirmationResult | null;
+    confirmation?: FirebaseAuthTypes.ConfirmationResult | null;  // Legacy, kept for backwards compatibility
     phoneNumber: string;
     sessionId?: string;
     password?: string;
-    verificationType?: 'signup' | 'phone2fa';
+    verificationType?: 'signup' | 'phone2fa' | 'phone_linking';
   };
   OTPTest: undefined;
   MainTabs: undefined;

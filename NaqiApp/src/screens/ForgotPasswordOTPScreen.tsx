@@ -26,42 +26,22 @@ const ForgotPasswordOTPScreen: React.FC = () => {
   const {i18n, t} = useTranslation();
   const route = useRoute<ForgotPasswordOTPRouteProp>();
   const navigation = useNavigation<NavigationProp>();
-  const {sendLoginOTP, verifyForgotPasswordOTP} = useAuth();
+  const {verifyForgotPasswordOTP, sendTwilioOTP} = useAuth();
 
   const [otp, setOTP] = useState('');
   const [loading, setLoading] = useState(false);
-  const [confirmation, setConfirmation] = useState<any>(null);
 
-  const {sessionId, phoneNumberMasked, email} = route.params;
+  const {sessionId, phoneNumberMasked, email, phoneNumber} = route.params;
 
   useEffect(() => {
-    // Send OTP automatically when screen loads
-    sendOTPCode();
+    // OTP already sent by backend during initiate, just show confirmation
+    Alert.alert(
+      i18n.language === 'ar' ? 'إرسال رمز التحقق' : 'OTP Sent',
+      i18n.language === 'ar'
+        ? `تم إرسال رمز التحقق إلى ${phoneNumberMasked}`
+        : `Verification code sent to ${phoneNumberMasked}`,
+    );
   }, []);
-
-  const sendOTPCode = async () => {
-    try {
-      setLoading(true);
-      // Note: We need to get the full phone number from backend
-      // For now, show that OTP was sent
-      Alert.alert(
-        i18n.language === 'ar' ? 'إرسال رمز التحقق' : 'OTP Sent',
-        i18n.language === 'ar'
-          ? `تم إرسال رمز التحقق إلى ${phoneNumberMasked}`
-          : `Verification code sent to ${phoneNumberMasked}`,
-      );
-    } catch (error) {
-      console.error('Error sending OTP:', error);
-      Alert.alert(
-        i18n.language === 'ar' ? 'خطأ' : 'Error',
-        i18n.language === 'ar'
-          ? 'فشل إرسال رمز التحقق'
-          : 'Failed to send verification code',
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleVerifyOTP = async () => {
     if (!otp || otp.length !== 6) {
@@ -74,24 +54,10 @@ const ForgotPasswordOTPScreen: React.FC = () => {
       return;
     }
 
-    if (!confirmation) {
-      Alert.alert(
-        i18n.language === 'ar' ? 'خطأ' : 'Error',
-        i18n.language === 'ar'
-          ? 'لم يتم إرسال رمز التحقق بعد'
-          : 'Verification code not sent yet',
-      );
-      return;
-    }
-
     setLoading(true);
     try {
-      // Verify OTP and get reset token
-      const resetToken = await verifyForgotPasswordOTP(
-        sessionId,
-        confirmation,
-        otp,
-      );
+      // Verify OTP via Twilio and get reset token
+      const resetToken = await verifyForgotPasswordOTP(sessionId, otp);
 
       // Navigate to reset password screen
       navigation.navigate('ResetPassword', {
@@ -99,18 +65,54 @@ const ForgotPasswordOTPScreen: React.FC = () => {
       });
     } catch (error: any) {
       console.error('Error verifying OTP:', error);
+
+      // Provide specific error messages based on error type
+      let errorMessage = 'Invalid verification code';
+      let errorMessageAr = 'رمز التحقق غير صحيح';
+
+      if (error.message) {
+        const msg = error.message.toLowerCase();
+        if (msg.includes('session expired') || msg.includes('invalid session')) {
+          errorMessage = 'Session expired. Please start the password reset process again.';
+          errorMessageAr = 'انتهت صلاحية الجلسة. يرجى بدء عملية إعادة تعيين كلمة المرور مرة أخرى.';
+        } else if (msg.includes('invalid verification') || msg.includes('invalid otp')) {
+          errorMessage = 'Invalid verification code. Please try again.';
+          errorMessageAr = 'رمز التحقق غير صحيح. يرجى المحاولة مرة أخرى.';
+        } else {
+          errorMessage = error.message;
+        }
+      }
+
       Alert.alert(
         i18n.language === 'ar' ? 'خطأ' : 'Error',
-        i18n.language === 'ar'
-          ? 'رمز التحقق غير صحيح'
-          : 'Invalid verification code',
+        i18n.language === 'ar' ? errorMessageAr : errorMessage,
       );
       setLoading(false);
     }
   };
 
-  const handleResendOTP = () => {
-    sendOTPCode();
+  const handleResendOTP = async () => {
+    try {
+      setLoading(true);
+      // Resend OTP via Twilio
+      await sendTwilioOTP(phoneNumber);
+      Alert.alert(
+        i18n.language === 'ar' ? 'إرسال رمز التحقق' : 'OTP Sent',
+        i18n.language === 'ar'
+          ? `تم إرسال رمز التحقق إلى ${phoneNumberMasked}`
+          : `Verification code sent to ${phoneNumberMasked}`,
+      );
+    } catch (error) {
+      console.error('Error resending OTP:', error);
+      Alert.alert(
+        i18n.language === 'ar' ? 'خطأ' : 'Error',
+        i18n.language === 'ar'
+          ? 'فشل إرسال رمز التحقق'
+          : 'Failed to send verification code',
+      );
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -126,6 +128,7 @@ const ForgotPasswordOTPScreen: React.FC = () => {
         <TextInput
           style={styles.input}
           placeholder="000000"
+          placeholderTextColor={COLORS.gray}
           keyboardType="number-pad"
           value={otp}
           onChangeText={setOTP}

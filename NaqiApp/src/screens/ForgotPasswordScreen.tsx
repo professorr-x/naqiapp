@@ -21,7 +21,7 @@ type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 const ForgotPasswordScreen: React.FC = () => {
   const {i18n, t} = useTranslation();
   const navigation = useNavigation<NavigationProp>();
-  const {startForgotPassword, sendLoginOTP} = useAuth();
+  const {startForgotPassword} = useAuth();
 
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
@@ -40,13 +40,14 @@ const ForgotPasswordScreen: React.FC = () => {
 
     setLoading(true);
     try {
-      const {phoneNumberMasked, sessionId} = await startForgotPassword(email);
+      const {phoneNumberMasked, sessionId, phoneNumber} = await startForgotPassword(email);
 
       // Navigate to OTP verification screen
       navigation.navigate('ForgotPasswordOTP', {
         sessionId,
         phoneNumberMasked,
         email,
+        phoneNumber,
       });
     } catch (error: any) {
       console.error('Error initiating forgot password:', error);
@@ -74,6 +75,7 @@ const ForgotPasswordScreen: React.FC = () => {
         <TextInput
           style={styles.input}
           placeholder={t('auth.email')}
+          placeholderTextColor={COLORS.gray}
           keyboardType="email-address"
           value={email}
           onChangeText={setEmail}

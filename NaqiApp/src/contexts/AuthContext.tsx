@@ -18,6 +18,8 @@ import {
   sendTwilioVerification,
   checkTwilioVerification,
   isIraqiNumber,
+  initiatePhoneLinking,
+  verifyPhoneLinking,
 } from '../services/api';
 import {getDeviceFingerprint, getDeviceInfo} from '../utils/deviceFingerprint';
 import notificationService, {NotificationData} from '../services/notificationService';
@@ -43,9 +45,9 @@ interface AuthContextType {
   sendPasswordReset: (email: string) => Promise<void>;
   linkPhoneToAccount: (
     phoneNumber: string,
-  ) => Promise<FirebaseAuthTypes.ConfirmationResult>;
+  ) => Promise<{sessionId: string; phoneNumber: string}>;
   verifyPhoneOTP: (
-    confirmation: FirebaseAuthTypes.ConfirmationResult,
+    sessionId: string,
     code: string,
   ) => Promise<void>;
   isPhoneLinked: () => boolean;
@@ -67,10 +69,10 @@ interface AuthContextType {
   startForgotPassword: (email: string) => Promise<{
     phoneNumberMasked: string;
     sessionId: string;
+    phoneNumber: string;
   }>;
   verifyForgotPasswordOTP: (
     sessionId: string,
-    confirmation: FirebaseAuthTypes.ConfirmationResult,
     code: string,
   ) => Promise<string>;
   resetPassword: (resetToken: string, newPassword: string) => Promise<void>;
@@ -288,7 +290,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({children}) => {
     await auth().sendPasswordResetEmail(email);
   };
 
-  // Phone 2FA - linking phone to email account
+  // Phone 2FA - linking phone to email account (using Twilio)
   const linkPhoneToAccount = async (phoneNumber: string) => {
     const formattedPhone = phoneNumber.startsWith('+')
       ? phoneNumber
@@ -298,32 +300,26 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({children}) => {
     console.log('Current user:', auth().currentUser?.email);
 
     try {
-      const confirmation = await auth().signInWithPhoneNumber(formattedPhone);
-      console.log('signInWithPhoneNumber resolved with confirmation:', confirmation.verificationId);
-      return confirmation;
+      // Initiate phone linking via backend (sends OTP via Twilio)
+      const response = await initiatePhoneLinking(formattedPhone);
+      console.log('Phone linking initiated:', response.data);
+
+      return {
+        sessionId: response.data.session_id,
+        phoneNumber: response.data.phone_number,
+      };
     } catch (error) {
-      console.error('signInWithPhoneNumber error:', error);
+      console.error('Phone linking initiation error:', error);
       throw error;
     }
   };
 
   const verifyPhoneOTP = async (
-    confirmation: FirebaseAuthTypes.ConfirmationResult,
+    sessionId: string,
     code: string,
   ) => {
-    // Get the phone credential
-    const credential = auth.PhoneAuthProvider.credential(
-      confirmation.verificationId,
-      code,
-    );
-
-    // Link the credential to the current user (don't sign in with it)
-    const currentUser = auth().currentUser;
-    if (currentUser) {
-      await currentUser.linkWithCredential(credential);
-    } else {
-      throw new Error('No user is currently signed in');
-    }
+    // Verify OTP via Twilio and link phone to account
+    await verifyPhoneLinking(sessionId, code);
   };
 
   const isPhoneLinked = () => {
@@ -405,35 +401,34 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({children}) => {
   };
 
   const startForgotPassword = async (email: string) => {
+    // Backend now sends OTP via Twilio automatically
     const response = await initiateForgotPassword(email);
 
     return {
       phoneNumberMasked: response.data.phone_number_masked,
       sessionId: response.data.session_id,
+      phoneNumber: response.data.phone_number,
     };
   };
 
   const verifyForgotPasswordOTP = async (
     sessionId: string,
-    confirmation: FirebaseAuthTypes.ConfirmationResult,
     code: string,
   ) => {
-    // Verify OTP with Firebase first
-    await confirmation.confirm(code);
-
-    // Then get reset token from backend
+    // Verify OTP with Twilio via backend
     try {
-      const response = await apiVerifyForgotPasswordOTP(sessionId);
+      const response = await apiVerifyForgotPasswordOTP(sessionId, code);
       return response.data.reset_token;
     } catch (backendError: any) {
-      // If backend validation fails, sign out to prevent unwanted auth state
-      console.error('Backend forgot password OTP verification failed:', backendError);
-      await signOut();
+      console.error('Forgot password OTP verification failed:', backendError);
 
       // Re-throw with more specific error message
-      const errorMessage = backendError.message || 'Failed to verify OTP';
+      const errorMessage = backendError.response?.data?.detail || backendError.message || 'Failed to verify OTP';
       if (errorMessage.includes('expired') || errorMessage.includes('invalid session')) {
         throw new Error('Session expired. Please start the password reset process again.');
+      }
+      if (errorMessage.includes('Invalid OTP') || errorMessage.includes('Invalid verification')) {
+        throw new Error('Invalid verification code. Please try again.');
       }
       throw new Error(errorMessage);
     }
@@ -462,6 +457,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({children}) => {
     displayName: string,
     countryCode: string = '+964',
   ) => {
+    console.log('[signUpWithPhone] START - Phone:', phoneNumber);
     const deviceFingerprint = await getDeviceFingerprint();
     const deviceInfo = await getDeviceInfo();
 
@@ -471,6 +467,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({children}) => {
       : `${countryCode}${phoneNumber}`;
 
     // Create user in backend (this creates the Firebase Auth user with phone + password)
+    console.log('[signUpWithPhone] Calling backend signUpWithPhonePassword...');
     const response = await signUpWithPhonePassword(
       phoneNumber,
       password,
@@ -481,11 +478,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({children}) => {
       undefined, // email is optional
       countryCode,
     );
+    console.log('[signUpWithPhone] Backend response:', response.data);
 
     // Send OTP via Twilio Verify instead of Firebase (avoids iOS reCAPTCHA requirement)
     const language = await AsyncStorage.getItem('user_language');
     const locale = language === 'ar' ? 'ar' : 'en';
+    console.log('[signUpWithPhone] Sending Twilio OTP to:', formattedPhone, 'locale:', locale);
     await sendTwilioVerification(formattedPhone, locale);
+    console.log('[signUpWithPhone] Twilio OTP sent successfully');
 
     return {
       sessionId: response.data.session_id,

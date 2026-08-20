@@ -47,21 +47,43 @@ const OTPVerificationScreen: React.FC = () => {
     setLoading(true);
     try {
       if (verificationType === 'signup' && sessionId && password) {
-        // Handle signup verification
+        // Handle signup verification (uses Twilio)
         await verifyPhoneSignup(sessionId, confirmation, otp, true, phoneNumber, password);
         // User will be automatically navigated to dashboard by auth state change
-      } else {
-        // Handle phone linking for existing users
-        await verifyPhoneOTP(confirmation, otp);
+      } else if (verificationType === 'phone_linking' && sessionId) {
+        // Handle phone linking for existing users (uses Twilio)
+        await verifyPhoneOTP(sessionId, otp);
+        Alert.alert(
+          i18n.language === 'ar' ? 'نجح' : 'Success',
+          i18n.language === 'ar'
+            ? 'تم ربط رقم الهاتف بنجاح'
+            : 'Phone number linked successfully',
+        );
         // Navigation will be handled by auth state change in AppNavigator
+      } else {
+        // Fallback: old phone linking flow (should not happen anymore)
+        Alert.alert(
+          i18n.language === 'ar' ? 'خطأ' : 'Error',
+          i18n.language === 'ar'
+            ? 'نوع التحقق غير صالح'
+            : 'Invalid verification type',
+        );
       }
     } catch (error: any) {
       console.error('Error verifying OTP:', error);
+
+      let errorMessage = 'Invalid verification code';
+      if (error.response?.data?.detail) {
+        errorMessage = error.response.data.detail;
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+
       Alert.alert(
         i18n.language === 'ar' ? 'خطأ' : 'Error',
         i18n.language === 'ar'
           ? 'رمز التحقق غير صحيح'
-          : 'Invalid verification code',
+          : errorMessage,
       );
     } finally {
       setLoading(false);

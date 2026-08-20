@@ -65,11 +65,13 @@ class InitiateForgotPasswordResponse(BaseModel):
     success: bool
     phone_number_masked: str
     session_id: str
+    phone_number: Optional[str] = None  # Full phone number for Twilio verification
 
 
 class VerifyForgotPasswordOTPRequest(BaseModel):
     """Request to verify OTP for password reset"""
     session_id: str
+    otp_code: str  # OTP code entered by user
 
 
 class VerifyForgotPasswordOTPResponse(BaseModel):
@@ -201,6 +203,7 @@ class PhoneLoginResponse(BaseModel):
     message: str
     session_id: Optional[str] = None
     phone_number_masked: Optional[str] = None
+    phone_number: Optional[str] = None  # Full phone number for Twilio verification
 
 
 class SendOTPRequest(BaseModel):
@@ -215,6 +218,7 @@ class SendOTPResponse(BaseModel):
     message: str
     session_id: str
     expires_in_seconds: int
+    phone_number: Optional[str] = None  # Full phone number for Twilio verification
 
 
 class VerifyOTPLoginRequest(BaseModel):
