@@ -803,6 +803,8 @@ async def verify_otp_login(request: VerifyOTPLoginRequest):
     """
     Verify OTP code with Twilio and complete login.
     """
+    from app.services.twilio_verify import twilio_verify_service
+
     session = database.get_otp_session(request.session_id)
 
     if not session:
