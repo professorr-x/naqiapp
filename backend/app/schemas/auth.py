@@ -57,7 +57,8 @@ class VerifyLoginOTPResponse(BaseModel):
 
 class InitiateForgotPasswordRequest(BaseModel):
     """Request to initiate forgot password flow"""
-    email: EmailStr
+    phone_number: str
+    country_code: str = "+964"
 
 
 class InitiateForgotPasswordResponse(BaseModel):

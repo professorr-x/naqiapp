@@ -891,29 +891,27 @@ async def verify_otp_login(request: VerifyOTPLoginRequest):
 async def initiate_forgot_password(request: InitiateForgotPasswordRequest):
     """
     Initiate forgot password flow.
-    Looks up user, sends OTP via Twilio, and returns masked phone number.
+    Looks up user by phone number, sends OTP via Twilio, and returns masked phone number.
     """
     from app.services.twilio_verify import twilio_verify_service
 
-    # Look up user by email
-    firebase_user = firebase_admin.get_user_by_email(request.email)
+    # Normalize phone number
+    phone_number = request.phone_number
+    if not phone_number.startswith('+'):
+        phone_number = f"{request.country_code}{phone_number}"
+
+    # Look up user by phone number
+    firebase_user = firebase_admin.get_user_by_phone_number(phone_number)
 
     if not firebase_user:
         # For security, don't reveal if user exists
         # Return generic message
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="If an account with this email exists, an OTP will be sent to the registered phone number"
+            detail="If an account with this phone number exists, an OTP will be sent"
         )
 
     firebase_uid = firebase_user['uid']
-    phone_number = firebase_user.get('phone_number')
-
-    if not phone_number:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No phone number registered for this account. Please contact support."
-        )
 
     # Get or create user in Firestore
     user = database.get_user_by_firebase_uid(firebase_uid)
