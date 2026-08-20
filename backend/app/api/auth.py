@@ -660,11 +660,17 @@ async def login_with_phone_password(request: PhoneLoginRequest):
     4. Client verifies OTP and calls verify-otp endpoint
     """
     from app.services.twilio_verify import twilio_verify_service
+    import logging
+    logger = logging.getLogger(__name__)
+
+    logger.info(f"[LOGIN] Endpoint called for phone: {request.phone_number}")
 
     # Normalize phone number
     phone_number = request.phone_number
     if not phone_number.startswith('+'):
         phone_number = f"{request.country_code}{phone_number}"
+
+    logger.info(f"[LOGIN] Normalized phone: {phone_number}")
 
     # Look up user by phone
     firebase_user = firebase_admin.get_user_by_phone_number(phone_number)
@@ -712,14 +718,17 @@ async def login_with_phone_password(request: PhoneLoginRequest):
     )
 
     # Send OTP via Twilio
+    logger.info(f"[LOGIN] About to send OTP to {phone_number}, session_id: {session['id']}")
     if twilio_verify_service.enabled:
         result = twilio_verify_service.send_verification(phone_number, 'sms', 'en')
+        logger.info(f"[LOGIN] OTP send result: {result}")
         if not result['success']:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Failed to send OTP: {result['error']}"
             )
 
+    logger.info(f"[LOGIN] Returning response with requires_otp=True, session_id: {session['id']}")
     return PhoneLoginResponse(
         requires_otp=True,
         message="OTP sent to your phone",
