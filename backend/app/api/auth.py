@@ -799,8 +799,7 @@ async def send_otp(request: SendOTPRequest):
 @router.post("/login/otp-verify", response_model=VerifyOTPLoginResponse)
 async def verify_otp_login(request: VerifyOTPLoginRequest):
     """
-    Verify OTP and complete login.
-    Client should verify OTP with Firebase first, then call this.
+    Verify OTP code with Twilio and complete login.
     """
     session = database.get_otp_session(request.session_id)
 
@@ -832,7 +831,34 @@ async def verify_otp_login(request: VerifyOTPLoginRequest):
             detail="Invalid session type"
         )
 
-    # Mark as verified
+    # Get phone number from session
+    phone_number = session.get('phone_number')
+    if not phone_number:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Phone number not found in session"
+        )
+
+    # Verify OTP code with Twilio
+    logger.info(f"[OTP-VERIFY] Verifying code for {phone_number}, session: {request.session_id}")
+    if twilio_verify_service.enabled:
+        result = twilio_verify_service.check_verification(phone_number, request.code)
+
+        if not result['valid']:
+            logger.error(f"[OTP-VERIFY] Verification failed: {result['error']}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=result['error'] or "Invalid verification code"
+            )
+
+        logger.info(f"[OTP-VERIFY] Twilio verification successful for {phone_number}")
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Twilio Verify service is not available"
+        )
+
+    # Mark session as verified
     database.mark_otp_verified(request.session_id)
 
     device_trusted = False

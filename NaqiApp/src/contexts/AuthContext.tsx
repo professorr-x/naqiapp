@@ -68,6 +68,7 @@ interface AuthContextType {
   ) => Promise<void>;
   verifyLoginOTP: (
     sessionId: string,
+    code: string,
     rememberDevice: boolean,
     phoneNumber: string,
     password: string,
@@ -408,12 +409,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({children}) => {
 
   const verifyLoginOTPWrapper = async (
     sessionId: string,
+    code: string,
     rememberDevice: boolean,
     phoneNumber: string,
     password: string,
   ) => {
-    // Call backend to verify OTP session and trust device
-    await verifyLoginOTP(sessionId, rememberDevice);
+    // Call backend to verify OTP code with Twilio and mark session as verified
+    await verifyLoginOTPPhone(sessionId, code, rememberDevice);
 
     // Sign into Firebase using email/password format (not phone auth)
     const phoneEmail = `${phoneNumber.replace('+', '')}@naqi.app`;

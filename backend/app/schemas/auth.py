@@ -224,6 +224,7 @@ class SendOTPResponse(BaseModel):
 class VerifyOTPLoginRequest(BaseModel):
     """Verify OTP and login"""
     session_id: str
+    code: str
     remember_device: bool = False
 
 

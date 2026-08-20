@@ -53,12 +53,8 @@ const LoginOTPScreen: React.FC = () => {
 
     setLoading(true);
     try {
-      // Verify with Twilio
-      await verifyTwilioOTP(phoneNumber, otp);
-      console.log('Twilio OTP verified successfully');
-
-      // Complete login with backend and sign into Firebase
-      await verifyLoginOTP(sessionId, rememberDevice, phoneNumber, password);
+      // Verify OTP with Twilio via backend and sign into Firebase
+      await verifyLoginOTP(sessionId, otp, rememberDevice, phoneNumber, password);
 
       // User is now logged in, navigation will be handled by auth state
     } catch (error: any) {

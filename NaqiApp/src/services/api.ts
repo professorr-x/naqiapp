@@ -156,10 +156,12 @@ export const sendLoginOTP = async (
 
 export const verifyLoginOTPPhone = async (
   sessionId: string,
+  code: string,
   rememberDevice: boolean,
 ) => {
   return api.post('/auth/login/otp-verify', {
     session_id: sessionId,
+    code: code,
     remember_device: rememberDevice,
   });
 };
