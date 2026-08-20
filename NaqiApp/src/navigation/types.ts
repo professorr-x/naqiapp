@@ -20,6 +20,7 @@ export type RootStackParamList = {
     phoneNumber: string;
     sessionId: string;
     phoneNumberMasked: string;
+    password: string;
   };
   ForgotPassword: undefined;
   ForgotPasswordOTP: {

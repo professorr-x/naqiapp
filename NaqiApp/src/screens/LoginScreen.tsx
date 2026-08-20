@@ -69,6 +69,7 @@ const LoginScreen = () => {
           phoneNumber: fullPhoneNumber,
           sessionId: result.sessionId!,
           phoneNumberMasked: result.phoneNumberMasked!,
+          password: password,
         });
       }
       // If no OTP required, navigation will be handled by AppNavigator

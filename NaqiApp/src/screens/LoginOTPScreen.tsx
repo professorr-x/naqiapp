@@ -29,7 +29,7 @@ const LoginOTPScreen: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [rememberDevice, setRememberDevice] = useState(true);
 
-  const {phoneNumber, sessionId, phoneNumberMasked} = route.params;
+  const {phoneNumber, sessionId, phoneNumberMasked, password} = route.params;
   useEffect(() => {
     // OTP already sent by backend during login check, just show confirmation
     Alert.alert(
@@ -57,8 +57,8 @@ const LoginOTPScreen: React.FC = () => {
       await verifyTwilioOTP(phoneNumber, otp);
       console.log('Twilio OTP verified successfully');
 
-      // Complete login with backend
-      await verifyLoginOTP(sessionId, rememberDevice);
+      // Complete login with backend and sign into Firebase
+      await verifyLoginOTP(sessionId, rememberDevice, phoneNumber, password);
 
       // User is now logged in, navigation will be handled by auth state
     } catch (error: any) {

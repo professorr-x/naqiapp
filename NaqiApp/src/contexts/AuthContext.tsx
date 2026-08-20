@@ -69,6 +69,8 @@ interface AuthContextType {
   verifyLoginOTP: (
     sessionId: string,
     rememberDevice: boolean,
+    phoneNumber: string,
+    password: string,
   ) => Promise<void>;
   startForgotPassword: (email: string) => Promise<{
     phoneNumberMasked: string;
@@ -407,9 +409,22 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({children}) => {
   const verifyLoginOTPWrapper = async (
     sessionId: string,
     rememberDevice: boolean,
+    phoneNumber: string,
+    password: string,
   ) => {
-    // Call backend to verify OTP and trust device
+    // Call backend to verify OTP session and trust device
     await verifyLoginOTP(sessionId, rememberDevice);
+
+    // Sign into Firebase using email/password format (not phone auth)
+    const phoneEmail = `${phoneNumber.replace('+', '')}@naqi.app`;
+    await auth().signInWithEmailAndPassword(phoneEmail, password);
+
+    // Get and store Firebase token
+    const user = auth().currentUser;
+    if (user) {
+      const token = await user.getIdToken();
+      await AsyncStorage.setItem('firebase_token', token);
+    }
   };
 
   const startForgotPassword = async (email: string) => {
