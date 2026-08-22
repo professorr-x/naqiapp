@@ -32,6 +32,12 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
+def is_reviewer_phone(phone_number: str) -> bool:
+    """Check if phone number is the App Store reviewer bypass number"""
+    reviewer_phone = os.getenv('REVIEWER_PHONE_NUMBER', '+15551234567').strip()
+    return phone_number == reviewer_phone
+
+
 @router.get("/me", response_model=UserResponse)
 async def get_current_user_profile(current_user: Dict[str, Any] = Depends(get_current_user)):
     """Get current authenticated user profile"""
@@ -736,7 +742,9 @@ async def login_with_phone_password(request: PhoneLoginRequest):
 
     # Send OTP via Twilio
     logger.info(f"[LOGIN] About to send OTP to {phone_number}, session_id: {session['id']}")
-    if twilio_verify_service.enabled:
+
+    # App Store reviewer bypass
+    if not is_reviewer_phone(phone_number) and twilio_verify_service.enabled:
         result = twilio_verify_service.send_verification(phone_number, 'sms', 'en')
         logger.info(f"[LOGIN] OTP send result: {result}")
         if not result['success']:
@@ -744,6 +752,8 @@ async def login_with_phone_password(request: PhoneLoginRequest):
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Failed to send OTP: {result['error']}"
             )
+    elif is_reviewer_phone(phone_number):
+        logger.info("[LOGIN] OTP bypass used for reviewer number")
 
     logger.info(f"[LOGIN] Returning response with requires_otp=True, session_id: {session['id']}")
     return PhoneLoginResponse(
@@ -795,13 +805,16 @@ async def send_otp(request: SendOTPRequest):
     )
 
     # Send OTP via Twilio
-    if twilio_verify_service.enabled:
+    # App Store reviewer bypass
+    if not is_reviewer_phone(phone_number) and twilio_verify_service.enabled:
         result = twilio_verify_service.send_verification(phone_number, 'sms', 'en')
         if not result['success']:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Failed to send OTP: {result['error']}"
             )
+    elif is_reviewer_phone(phone_number):
+        logger.info("[OTP-SEND] OTP bypass used for reviewer number")
 
     return SendOTPResponse(
         success=True,
@@ -859,7 +872,18 @@ async def verify_otp_login(request: VerifyOTPLoginRequest):
 
     # Verify OTP code with Twilio
     logger.info(f"[OTP-VERIFY] Verifying code for {phone_number}, session: {request.session_id}")
-    if twilio_verify_service.enabled:
+
+    # App Store reviewer bypass
+    if is_reviewer_phone(phone_number):
+        reviewer_code = os.getenv('REVIEWER_OTP_CODE', '111111').strip()
+        if request.code != reviewer_code:
+            logger.error(f"[OTP-VERIFY] Reviewer bypass: incorrect code")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid verification code"
+            )
+        logger.info(f"[OTP-VERIFY] Reviewer bypass: verification successful")
+    elif twilio_verify_service.enabled:
         result = twilio_verify_service.check_verification(phone_number, request.code)
 
         if not result['valid']:
@@ -947,13 +971,16 @@ async def initiate_forgot_password(request: InitiateForgotPasswordRequest):
     )
 
     # Send OTP via Twilio Verify
-    if twilio_verify_service.enabled:
+    # App Store reviewer bypass
+    if not is_reviewer_phone(phone_number) and twilio_verify_service.enabled:
         result = twilio_verify_service.send_verification(phone_number, 'sms', 'en')
         if not result['success']:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Failed to send OTP: {result['error']}"
             )
+    elif is_reviewer_phone(phone_number):
+        logger.info("[FORGOT-PASSWORD] OTP bypass used for reviewer number")
 
     return InitiateForgotPasswordResponse(
         success=True,
@@ -998,8 +1025,18 @@ async def verify_forgot_password_otp(request: VerifyForgotPasswordOTPRequest):
         )
 
     # Verify OTP with Twilio
-    if twilio_verify_service.enabled:
-        phone_number = session.get('phone_number')
+    phone_number = session.get('phone_number')
+
+    # App Store reviewer bypass
+    if is_reviewer_phone(phone_number):
+        reviewer_code = os.getenv('REVIEWER_OTP_CODE', '111111').strip()
+        if request.otp_code != reviewer_code:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid OTP code"
+            )
+        logger.info(f"[FORGOT-PASSWORD-VERIFY] Reviewer bypass: OTP verification successful")
+    elif twilio_verify_service.enabled:
         result = twilio_verify_service.check_verification(phone_number, request.otp_code)
         if not result['valid']:
             raise HTTPException(
@@ -1144,13 +1181,16 @@ async def initiate_phone_linking(
     )
 
     # Send OTP via Twilio (default to English)
-    if twilio_verify_service.enabled:
+    # App Store reviewer bypass
+    if not is_reviewer_phone(phone_number) and twilio_verify_service.enabled:
         result = twilio_verify_service.send_verification(phone_number, 'sms', 'en')
         if not result['success']:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Failed to send OTP: {result['error']}"
             )
+    elif is_reviewer_phone(phone_number):
+        logger.info("[PHONE-LINKING] OTP bypass used for reviewer number")
 
     return {
         'success': True,
@@ -1207,7 +1247,17 @@ async def verify_phone_linking(
 
     # Verify OTP with Twilio
     phone_number = session.get('phone_number')
-    if twilio_verify_service.enabled:
+
+    # App Store reviewer bypass
+    if is_reviewer_phone(phone_number):
+        reviewer_code = os.getenv('REVIEWER_OTP_CODE', '111111').strip()
+        if otp_code != reviewer_code:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid OTP code"
+            )
+        logger.info(f"[PHONE-LINKING-VERIFY] Reviewer bypass: OTP verification successful")
+    elif twilio_verify_service.enabled:
         result = twilio_verify_service.check_verification(phone_number, otp_code)
         if not result['valid']:
             raise HTTPException(
