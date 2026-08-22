@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from typing import Dict, Any
 import logging
+import os
 from app.middleware.auth import get_current_user
 from app.schemas.user import UserResponse
 from app.schemas.auth import (
@@ -1260,16 +1261,27 @@ async def send_verification_code(phone_number: str, locale: str = 'en'):
     """
     from app.services.twilio_verify import twilio_verify_service
 
+    # Normalize phone number
+    if not phone_number.startswith('+'):
+        phone_number = f"+{phone_number}"
+
+    # App Store review bypass
+    reviewer_phone = os.getenv('REVIEWER_PHONE_NUMBER', '+15551234567')
+    if phone_number == reviewer_phone:
+        logger.info("OTP bypass used for reviewer number")
+        return {
+            'success': True,
+            'message': 'Verification code sent',
+            'phone_masked': mask_phone_number(phone_number),
+            'channel': 'sms'
+        }
+
     # Check if Twilio Verify is enabled
     if not twilio_verify_service.enabled:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Twilio Verify service is not available. Use Firebase for this number."
         )
-
-    # Normalize phone number
-    if not phone_number.startswith('+'):
-        phone_number = f"+{phone_number}"
 
     # Check if this number should use Twilio
     if not twilio_verify_service.should_use_verify(phone_number):
@@ -1315,16 +1327,69 @@ async def check_verification_code(phone_number: str, code: str):
     """
     from app.services.twilio_verify import twilio_verify_service
 
+    # Normalize phone number
+    if not phone_number.startswith('+'):
+        phone_number = f"+{phone_number}"
+
+    # App Store review bypass
+    reviewer_phone = os.getenv('REVIEWER_PHONE_NUMBER', '+15551234567')
+    reviewer_code = os.getenv('REVIEWER_OTP_CODE', '424242')
+
+    if phone_number == reviewer_phone:
+        logger.info("OTP bypass used for reviewer number")
+
+        # Check if code matches
+        if code != reviewer_code:
+            # Return same shape as Twilio failed verification
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid verification code"
+            )
+
+        # Code matches - ensure user exists
+        # Check if Firebase user exists
+        firebase_user = firebase_admin.get_user_by_phone_number(phone_number)
+
+        if not firebase_user:
+            # Create Firebase user for reviewer
+            try:
+                firebase_user = firebase_admin.create_user_with_phone_and_password(
+                    phone_number=phone_number,
+                    password='AppStoreReviewer123!',  # Dummy password
+                    display_name='App Store Reviewer'
+                )
+            except ValueError:
+                # User might already exist, try to get again
+                firebase_user = firebase_admin.get_user_by_phone_number(phone_number)
+
+        # Check if Firestore user exists
+        user = database.get_user_by_phone_number(phone_number)
+
+        if not user:
+            # Create Firestore user record
+            user = database.create_user(
+                firebase_uid=firebase_user['uid'],
+                email=firebase_user.get('email', ''),
+                phone_number=phone_number,
+                display_name='App Store Reviewer',
+                email_verified=False,
+                country_code=extract_country_code(phone_number),
+                role='user'
+            )
+
+        # Return success with approved status
+        return {
+            'success': True,
+            'message': 'Phone number verified',
+            'status': 'approved'
+        }
+
     # Check if Twilio Verify is enabled
     if not twilio_verify_service.enabled:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Twilio Verify service is not available"
         )
-
-    # Normalize phone number
-    if not phone_number.startswith('+'):
-        phone_number = f"+{phone_number}"
 
     try:
         result = twilio_verify_service.check_verification(phone_number, code)
