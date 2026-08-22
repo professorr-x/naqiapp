@@ -24,7 +24,7 @@ class Settings(BaseSettings):
 
     # App Store Review Bypass
     REVIEWER_PHONE_NUMBER: str = "+15551234567"
-    REVIEWER_OTP_CODE: str = "424242"
+    REVIEWER_OTP_CODE: str = "111111"
 
     @property
     def cors_origins(self) -> List[str]:
