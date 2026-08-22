@@ -1266,7 +1266,11 @@ async def send_verification_code(phone_number: str, locale: str = 'en'):
         phone_number = f"+{phone_number}"
 
     # App Store review bypass
-    reviewer_phone = os.getenv('REVIEWER_PHONE_NUMBER', '+15551234567')
+    reviewer_phone = os.getenv('REVIEWER_PHONE_NUMBER', '+15551234567').strip()
+
+    # Debug logging to help diagnose bypass issues
+    logger.debug(f"OTP send: phone='{phone_number}', reviewer='{reviewer_phone}', match={phone_number == reviewer_phone}")
+
     if phone_number == reviewer_phone:
         logger.info("OTP bypass used for reviewer number")
         return {
@@ -1332,8 +1336,11 @@ async def check_verification_code(phone_number: str, code: str):
         phone_number = f"+{phone_number}"
 
     # App Store review bypass
-    reviewer_phone = os.getenv('REVIEWER_PHONE_NUMBER', '+15551234567')
-    reviewer_code = os.getenv('REVIEWER_OTP_CODE', '424242')
+    reviewer_phone = os.getenv('REVIEWER_PHONE_NUMBER', '+15551234567').strip()
+    reviewer_code = os.getenv('REVIEWER_OTP_CODE', '424242').strip()
+
+    # Debug logging to help diagnose bypass issues
+    logger.debug(f"OTP check: phone='{phone_number}', reviewer='{reviewer_phone}', match={phone_number == reviewer_phone}")
 
     if phone_number == reviewer_phone:
         logger.info("OTP bypass used for reviewer number")
