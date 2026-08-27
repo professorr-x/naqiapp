@@ -62,10 +62,11 @@ async def health_check():
 
 
 # Include routers
-from app.api import orders, vouchers, settings as settings_api, auth, users, device_tokens
+from app.api import orders, vouchers, settings as settings_api, auth, users, device_tokens, admins
 
 app.include_router(auth.router, prefix="/api/auth", tags=["Authentication"])
 app.include_router(users.router, tags=["Users"])
+app.include_router(admins.router, tags=["Admin Management"])
 app.include_router(orders.router, prefix="/api/orders", tags=["Orders"])
 app.include_router(vouchers.router, prefix="/api/vouchers", tags=["Vouchers"])
 app.include_router(settings_api.router, prefix="/api/settings", tags=["Settings"])

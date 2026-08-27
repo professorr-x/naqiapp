@@ -129,6 +129,53 @@ def update_user_language(user_id: str, language: str) -> bool:
     return True
 
 
+def update_user_active_status(firebase_uid: str, is_active: bool) -> bool:
+    """
+    Enable or disable a user account.
+
+    Args:
+        firebase_uid: Firebase UID of the user
+        is_active: True to enable, False to disable
+
+    Returns:
+        True if successful, False if user not found
+    """
+    db = get_firestore_db()
+    users_ref = db.collection(USERS_COLLECTION)
+    query = users_ref.where('firebase_uid', '==', firebase_uid).limit(1).stream()
+
+    for doc in query:
+        doc.reference.update({
+            'is_active': is_active,
+            'updated_at': firestore.SERVER_TIMESTAMP
+        })
+        return True
+
+    return False
+
+
+def get_user_by_phone_number(phone_number: str) -> Optional[Dict[str, Any]]:
+    """
+    Search for a user by phone number.
+
+    Args:
+        phone_number: Phone number to search for (with country code)
+
+    Returns:
+        User data if found, None otherwise
+    """
+    db = get_firestore_db()
+    users_ref = db.collection(USERS_COLLECTION)
+    query = users_ref.where('phone_number', '==', phone_number).limit(1)
+
+    for doc in query.stream():
+        data = doc.to_dict()
+        data['id'] = doc.id
+        return sanitize_user_data(data)
+
+    return None
+
+
 def create_order(order_data: Dict[str, Any]) -> Dict[str, Any]:
     """Create a new order in Firestore"""
     db = get_firestore_db()
