@@ -848,6 +848,166 @@ def delete_user_from_firestore(firebase_uid: str) -> bool:
     return False
 
 
+def cascade_delete_user_data(firebase_uid: str, user_id: Optional[str] = None) -> Dict[str, int]:
+    """
+    Comprehensively delete all user data across all collections.
+
+    This function removes all traces of a user from:
+    - Firestore collections (trusted_devices, otp_sessions, password_reset_tokens,
+      device_tokens, chat_sessions, messages, orders, vouchers)
+    - Users collection
+
+    Args:
+        firebase_uid: Firebase UID of the user to delete
+        user_id: Firestore document ID of the user (optional, will be fetched if not provided)
+
+    Returns:
+        Dict with count of deleted items from each collection
+    """
+    db = get_firestore_db()
+    deletion_counts = {
+        'users': 0,
+        'trusted_devices': 0,
+        'otp_sessions': 0,
+        'password_reset_tokens': 0,
+        'device_tokens': 0,
+        'chat_sessions': 0,
+        'messages': 0,
+        'orders': 0,
+        'vouchers': 0
+    }
+
+    # Get user_id if not provided
+    if not user_id:
+        user_data = get_user_by_firebase_uid(firebase_uid)
+        if user_data:
+            user_id = user_data['id']
+
+    # Delete trusted devices
+    trusted_devices_ref = db.collection(TRUSTED_DEVICES_COLLECTION)
+    if user_id:
+        devices_query = trusted_devices_ref.where('user_id', '==', user_id).stream()
+        for doc in devices_query:
+            doc.reference.delete()
+            deletion_counts['trusted_devices'] += 1
+
+    # Also check by firebase_uid
+    devices_query = trusted_devices_ref.where('firebase_uid', '==', firebase_uid).stream()
+    for doc in devices_query:
+        doc.reference.delete()
+        deletion_counts['trusted_devices'] += 1
+
+    # Delete OTP sessions
+    otp_sessions_ref = db.collection(OTP_SESSIONS_COLLECTION)
+    if user_id:
+        otp_query = otp_sessions_ref.where('user_id', '==', user_id).stream()
+        for doc in otp_query:
+            doc.reference.delete()
+            deletion_counts['otp_sessions'] += 1
+
+    # Also check by firebase_uid
+    otp_query = otp_sessions_ref.where('firebase_uid', '==', firebase_uid).stream()
+    for doc in otp_query:
+        doc.reference.delete()
+        deletion_counts['otp_sessions'] += 1
+
+    # Delete password reset tokens
+    reset_tokens_ref = db.collection(PASSWORD_RESET_TOKENS_COLLECTION)
+    if user_id:
+        tokens_query = reset_tokens_ref.where('user_id', '==', user_id).stream()
+        for doc in tokens_query:
+            doc.reference.delete()
+            deletion_counts['password_reset_tokens'] += 1
+
+    # Also check by firebase_uid
+    tokens_query = reset_tokens_ref.where('firebase_uid', '==', firebase_uid).stream()
+    for doc in tokens_query:
+        doc.reference.delete()
+        deletion_counts['password_reset_tokens'] += 1
+
+    # Delete device tokens
+    device_tokens_ref = db.collection(DEVICE_TOKENS_COLLECTION)
+    if user_id:
+        device_tokens_query = device_tokens_ref.where('user_id', '==', user_id).stream()
+        for doc in device_tokens_query:
+            doc.reference.delete()
+            deletion_counts['device_tokens'] += 1
+
+    # Also check by firebase_uid
+    device_tokens_query = device_tokens_ref.where('firebase_uid', '==', firebase_uid).stream()
+    for doc in device_tokens_query:
+        doc.reference.delete()
+        deletion_counts['device_tokens'] += 1
+
+    # Delete chat sessions and their messages
+    chat_sessions_ref = db.collection(CHAT_SESSIONS_COLLECTION)
+    sessions_query = chat_sessions_ref.where('customer_uid', '==', firebase_uid).stream()
+
+    for session_doc in sessions_query:
+        session_id = session_doc.id
+
+        # Delete all messages in this session
+        messages_ref = db.collection(MESSAGES_COLLECTION)
+        messages_query = messages_ref.where('session_id', '==', session_id).stream()
+        for msg_doc in messages_query:
+            msg_doc.reference.delete()
+            deletion_counts['messages'] += 1
+
+        # Delete the session
+        session_doc.reference.delete()
+        deletion_counts['chat_sessions'] += 1
+
+    # Delete messages sent by the user (in case they sent messages in other sessions as admin)
+    messages_ref = db.collection(MESSAGES_COLLECTION)
+    user_messages_query = messages_ref.where('sender_uid', '==', firebase_uid).stream()
+    for msg_doc in user_messages_query:
+        msg_doc.reference.delete()
+        deletion_counts['messages'] += 1
+
+    # Delete orders and their vouchers
+    orders_ref = db.collection(ORDERS_COLLECTION)
+    if user_id:
+        orders_query = orders_ref.where('user_id', '==', user_id).stream()
+        for order_doc in orders_query:
+            order_id = order_doc.id
+
+            # Delete vouchers associated with this order
+            vouchers_ref = db.collection(VOUCHERS_COLLECTION)
+            vouchers_query = vouchers_ref.where('order_id', '==', order_id).stream()
+            for voucher_doc in vouchers_query:
+                voucher_doc.reference.delete()
+                deletion_counts['vouchers'] += 1
+
+            # Delete the order
+            order_doc.reference.delete()
+            deletion_counts['orders'] += 1
+
+    # Also check orders by firebase_uid in case some orders have that field
+    orders_query = orders_ref.where('firebase_uid', '==', firebase_uid).stream()
+    for order_doc in orders_query:
+        order_id = order_doc.id
+
+        # Delete vouchers associated with this order
+        vouchers_ref = db.collection(VOUCHERS_COLLECTION)
+        vouchers_query = vouchers_ref.where('order_id', '==', order_id).stream()
+        for voucher_doc in vouchers_query:
+            voucher_doc.reference.delete()
+            deletion_counts['vouchers'] += 1
+
+        # Delete the order
+        order_doc.reference.delete()
+        deletion_counts['orders'] += 1
+
+    # Finally, delete the user from users collection
+    users_ref = db.collection(USERS_COLLECTION)
+    query = users_ref.where('firebase_uid', '==', firebase_uid).limit(1).stream()
+    for doc in query:
+        doc.reference.delete()
+        deletion_counts['users'] += 1
+
+    return deletion_counts
+
+
 def migrate_existing_users_to_default_role() -> int:
     """Add 'role' field to all existing users (set to 'user')."""
     db = get_firestore_db()

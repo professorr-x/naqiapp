@@ -20,6 +20,7 @@ from app.database import (
     create_user,
     get_user_by_email,
     delete_user_from_firestore,
+    cascade_delete_user_data,
     update_user_language,
     get_user_by_id
 )
@@ -184,7 +185,16 @@ async def delete_admin_user(
     firebase_uid: str,
     current_user: dict = Depends(get_current_user)
 ):
-    """Delete an admin user (admin only). Cannot delete yourself."""
+    """Delete an admin user (admin only). Cannot delete yourself.
+
+    This will permanently delete the user and ALL associated data including:
+    - Firebase Auth account
+    - User profile
+    - Orders and vouchers
+    - Chat sessions and messages
+    - Device tokens and trusted devices
+    - OTP sessions and password reset tokens
+    """
     # Check if current user is admin
     if current_user['role'] != 'admin':
         raise HTTPException(
@@ -208,12 +218,13 @@ async def delete_admin_user(
         )
 
     try:
+        # Cascade delete all user data from Firestore
+        deletion_counts = cascade_delete_user_data(firebase_uid)
+
         # Delete from Firebase Auth
         firebase_auth.delete_user(firebase_uid)
 
-        # User will be automatically deleted from Firestore or marked inactive
-        # depending on your implementation
-
+        print(f"Admin user {firebase_uid} deleted. Removed: {deletion_counts}")
         return None
     except firebase_auth.UserNotFoundError:
         raise HTTPException(
@@ -232,7 +243,16 @@ async def delete_user(
     firebase_uid: str,
     current_user: dict = Depends(get_current_user)
 ):
-    """Delete any user (admin only). Cannot delete yourself."""
+    """Delete any user (admin only). Cannot delete yourself.
+
+    This will permanently delete the user and ALL associated data including:
+    - Firebase Auth account
+    - User profile
+    - Orders and vouchers
+    - Chat sessions and messages
+    - Device tokens and trusted devices
+    - OTP sessions and password reset tokens
+    """
     # Check if current user is admin
     if current_user['role'] != 'admin':
         raise HTTPException(
@@ -248,12 +268,13 @@ async def delete_user(
         )
 
     try:
+        # Cascade delete all user data from Firestore
+        deletion_counts = cascade_delete_user_data(firebase_uid)
+
         # Delete from Firebase Auth
         firebase_auth.delete_user(firebase_uid)
 
-        # Delete from Firestore
-        delete_user_from_firestore(firebase_uid)
-
+        print(f"User {firebase_uid} deleted. Removed: {deletion_counts}")
         return None
     except firebase_auth.UserNotFoundError:
         raise HTTPException(
