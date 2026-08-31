@@ -45,16 +45,19 @@ interface AdminChatContextType {
 const AdminChatContext = createContext<AdminChatContextType | undefined>(undefined);
 
 export function AdminChatProvider({ children }: { children: React.ReactNode }) {
-  const authContext = useAuth();
-  const user = authContext?.user;
-  const getIdToken = authContext?.getIdToken;
-
+  const { user, getIdToken } = useAuth();
   const [socket, setSocket] = useState<Socket | null>(null);
   const [connected, setConnected] = useState(false);
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [sessionMessages, setSessionMessages] = useState<Record<string, Message[]>>({});
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [isClient, setIsClient] = useState(false);
+
+  // Ensure we're client-side
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
 
   // Initialize audio
   useEffect(() => {
@@ -108,7 +111,7 @@ export function AdminChatProvider({ children }: { children: React.ReactNode }) {
 
   // Initialize persistent socket connection
   useEffect(() => {
-    if (!user || !getIdToken) return;
+    if (!isClient || !user) return;
 
     const initSocket = async () => {
       try {
@@ -208,7 +211,8 @@ export function AdminChatProvider({ children }: { children: React.ReactNode }) {
     };
 
     initSocket();
-  }, [user, getIdToken]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isClient, user]);
 
   // Calculate total unread
   const totalUnread = sessions.reduce((sum, session) => sum + (session.unread_count_admin || 0), 0);
