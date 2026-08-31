@@ -379,7 +379,7 @@ export default function ChatPage() {
                         </p>
                       )}
                     </div>
-                    {session.unread_count_admin > 0 && (
+                    {(session.unread_count_admin ?? 0) > 0 && (
                       <span className="ml-2 min-w-[20px] h-5 px-1.5 bg-blue-500 text-white text-xs font-semibold rounded-full flex items-center justify-center">
                         {session.unread_count_admin}
                       </span>
