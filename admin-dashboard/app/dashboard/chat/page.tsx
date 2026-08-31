@@ -42,9 +42,11 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [messageInput, setMessageInput] = useState('');
   const [connected, setConnected] = useState(false);
+  const [bellAnimation, setBellAnimation] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const autoSelectedRef = useRef(false);
-  const audioContextRef = useRef<AudioContext | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
   const selectedSessionRef = useRef<string | null>(null);
 
   // Keep ref in sync with state
@@ -61,28 +63,24 @@ export default function ChatPage() {
     }
   }, []);
 
+  // Initialize audio element
+  useEffect(() => {
+    // Create audio element for notification sound
+    // Place your notification.mp3 file in: admin-dashboard/public/sounds/notification.mp3
+    audioRef.current = new Audio('/sounds/notification.mp3');
+    audioRef.current.volume = 0.5; // 50% volume
+  }, []);
+
   // Play notification sound
   const playNotificationSound = () => {
     try {
-      if (!audioContextRef.current) {
-        audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+      if (audioRef.current) {
+        // Reset audio to beginning in case it's already playing
+        audioRef.current.currentTime = 0;
+        audioRef.current.play().catch(error => {
+          console.error('Failed to play notification sound:', error);
+        });
       }
-
-      const context = audioContextRef.current;
-      const oscillator = context.createOscillator();
-      const gainNode = context.createGain();
-
-      oscillator.connect(gainNode);
-      gainNode.connect(context.destination);
-
-      oscillator.frequency.value = 800;
-      oscillator.type = 'sine';
-
-      gainNode.gain.setValueAtTime(0.3, context.currentTime);
-      gainNode.gain.exponentialRampToValueAtTime(0.01, context.currentTime + 0.2);
-
-      oscillator.start(context.currentTime);
-      oscillator.stop(context.currentTime + 0.2);
     } catch (error) {
       console.error('Failed to play notification sound:', error);
     }
@@ -90,6 +88,11 @@ export default function ChatPage() {
 
   // Show browser notification
   const showNotification = (title: string, body: string) => {
+    // Always show toast notification
+    setToastMessage(`${title}: ${body}`);
+    setTimeout(() => setToastMessage(null), 5000);
+
+    // Browser notification if permitted
     if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
       new Notification(title, {
         body,
@@ -97,7 +100,13 @@ export default function ChatPage() {
         tag: 'chat-notification',
       });
     }
+
+    // Play sound
     playNotificationSound();
+
+    // Trigger bell animation
+    setBellAnimation(true);
+    setTimeout(() => setBellAnimation(false), 1000);
   };
 
   // Scroll to bottom of messages
@@ -286,13 +295,42 @@ export default function ChatPage() {
 
   const customerName = searchParams.get('customerName');
 
+  // Calculate total unread messages
+  const totalUnread = sessions.reduce((sum, session) => sum + (session.unread_count_admin || 0), 0);
+
   return (
     <div className="h-[calc(100vh-4rem)]">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Customer Chat</h1>
-        <p className="text-gray-600">
-          Status: {connected ? '🟢 Connected' : '🔴 Disconnected'}
-        </p>
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div className="fixed top-4 right-4 bg-blue-600 text-white px-6 py-4 rounded-lg shadow-2xl z-50 max-w-md animate-slide-in-right">
+          <div className="flex items-center gap-3">
+            <span className="text-2xl">💬</span>
+            <p className="font-medium">{toastMessage}</p>
+          </div>
+        </div>
+      )}
+
+      <div className="mb-6 flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Customer Chat</h1>
+          <p className="text-gray-600">
+            Status: {connected ? '🟢 Connected' : '🔴 Disconnected'}
+          </p>
+        </div>
+
+        {/* Notification Bell */}
+        <div className="relative">
+          <div className={`w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center transition-all ${
+            bellAnimation ? 'animate-bounce bg-blue-200 scale-110' : ''
+          }`}>
+            <span className="text-2xl">🔔</span>
+          </div>
+          {totalUnread > 0 && (
+            <div className="absolute -top-1 -right-1 bg-red-500 text-white text-xs font-bold rounded-full min-w-[24px] h-6 flex items-center justify-center px-2 shadow-lg animate-pulse">
+              {totalUnread > 99 ? '99+' : totalUnread}
+            </div>
+          )}
+        </div>
       </div>
 
       {customerName && (
