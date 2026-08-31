@@ -1146,17 +1146,20 @@ def get_all_active_sessions() -> List[Dict[str, Any]]:
     """Get all active sessions that have at least one message."""
     db = get_firestore_db()
     sessions_ref = db.collection(CHAT_SESSIONS_COLLECTION)
-    query = sessions_ref.where('status', '==', 'active')\
-                       .where('message_count', '>', 0)\
-                       .order_by('message_count')\
-                       .order_by('last_message_at', direction=firestore.Query.DESCENDING)\
-                       .stream()
+
+    # Get all active sessions and filter in Python to avoid complex index
+    query = sessions_ref.where('status', '==', 'active').stream()
 
     sessions = []
     for doc in query:
         data = doc.to_dict()
-        data['session_id'] = doc.id
-        sessions.append(data)
+        # Only include sessions with messages
+        if data.get('message_count', 0) > 0:
+            data['session_id'] = doc.id
+            sessions.append(data)
+
+    # Sort by last_message_at in Python
+    sessions.sort(key=lambda x: x.get('last_message_at') or datetime.min.replace(tzinfo=timezone.utc), reverse=True)
 
     return sessions
 
