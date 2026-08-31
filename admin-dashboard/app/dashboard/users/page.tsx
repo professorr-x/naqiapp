@@ -10,7 +10,7 @@
  * - Multi-select users for bulk deletion
  */
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import axios from 'axios';
@@ -41,7 +41,7 @@ export default function UsersPage() {
   const [isDeleting, setIsDeleting] = useState(false);
 
   // Fetch all users
-  const fetchUsers = useCallback(async () => {
+  const fetchUsers = async () => {
     try {
       setLoading(true);
       setError(null);
@@ -63,11 +63,12 @@ export default function UsersPage() {
     } finally {
       setLoading(false);
     }
-  }, [getIdToken]);
+  };
 
   useEffect(() => {
     fetchUsers();
-  }, [fetchUsers]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Open chat with user
   const handleOpenChat = (user: User) => {
