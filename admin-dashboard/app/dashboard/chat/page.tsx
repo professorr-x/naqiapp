@@ -18,7 +18,7 @@ interface ChatSession {
   customer_email: string;
   status: string;
   last_message_at: string | null;
-  has_new_message?: boolean;
+  unread_count_admin?: number;
 }
 
 interface Message {
@@ -153,6 +153,16 @@ export default function ChatPage() {
 
     setSelectedSession(sessionId);
     setMessages([]);
+
+    // Reset unread count for this session in UI
+    setSessions((prev) =>
+      prev.map((session) =>
+        session.session_id === sessionId
+          ? { ...session, unread_count_admin: 0 }
+          : session
+      )
+    );
+
     socket.emit('admin_join_session', { session_id: sessionId });
   };
 
@@ -231,8 +241,10 @@ export default function ChatPage() {
                         </p>
                       )}
                     </div>
-                    {session.has_new_message && (
-                      <span className="ml-2 w-2 h-2 bg-blue-500 rounded-full"></span>
+                    {session.unread_count_admin > 0 && (
+                      <span className="ml-2 min-w-[20px] h-5 px-1.5 bg-blue-500 text-white text-xs font-semibold rounded-full flex items-center justify-center">
+                        {session.unread_count_admin}
+                      </span>
                     )}
                   </div>
                 </button>

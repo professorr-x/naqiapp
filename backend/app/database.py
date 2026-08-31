@@ -1098,7 +1098,8 @@ def create_chat_session(
         'assigned_admin_name': None,
         'created_at': firestore.SERVER_TIMESTAMP,
         'updated_at': firestore.SERVER_TIMESTAMP,
-        'last_message_at': firestore.SERVER_TIMESTAMP,
+        'last_message_at': None,
+        'message_count': 0,
         'unread_count_customer': 0,
         'unread_count_admin': 0
     }
@@ -1106,7 +1107,7 @@ def create_chat_session(
     session_ref.set(session_data)
     session_data['created_at'] = datetime.now(timezone.utc)
     session_data['updated_at'] = datetime.now(timezone.utc)
-    session_data['last_message_at'] = datetime.now(timezone.utc)
+    session_data['last_message_at'] = None
 
     return session_data
 
@@ -1142,10 +1143,12 @@ def get_active_session_for_customer(customer_uid: str) -> Optional[Dict[str, Any
 
 
 def get_all_active_sessions() -> List[Dict[str, Any]]:
-    """Get all active sessions."""
+    """Get all active sessions that have at least one message."""
     db = get_firestore_db()
     sessions_ref = db.collection(CHAT_SESSIONS_COLLECTION)
     query = sessions_ref.where('status', '==', 'active')\
+                       .where('message_count', '>', 0)\
+                       .order_by('message_count')\
                        .order_by('last_message_at', direction=firestore.Query.DESCENDING)\
                        .stream()
 
@@ -1211,13 +1214,35 @@ def create_message(
     return message_data
 
 
-def update_chat_session_last_message(session_id: str) -> None:
-    """Update session's last message timestamp."""
+def update_chat_session_last_message(session_id: str, sender_role: str = 'user') -> None:
+    """Update session's last message timestamp and increment counters."""
+    db = get_firestore_db()
+    session_ref = db.collection(CHAT_SESSIONS_COLLECTION).document(session_id)
+
+    # Increment message count and appropriate unread counter
+    update_data = {
+        'last_message_at': firestore.SERVER_TIMESTAMP,
+        'updated_at': firestore.SERVER_TIMESTAMP,
+        'message_count': firestore.Increment(1)
+    }
+
+    # If customer sends message, increment admin's unread count
+    if sender_role == 'user':
+        update_data['unread_count_admin'] = firestore.Increment(1)
+    # If admin sends message, increment customer's unread count
+    elif sender_role == 'admin':
+        update_data['unread_count_customer'] = firestore.Increment(1)
+
+    session_ref.update(update_data)
+
+
+def reset_admin_unread_count(session_id: str) -> None:
+    """Reset admin's unread count when they open a session."""
     db = get_firestore_db()
     session_ref = db.collection(CHAT_SESSIONS_COLLECTION).document(session_id)
 
     session_ref.update({
-        'last_message_at': firestore.SERVER_TIMESTAMP,
+        'unread_count_admin': 0,
         'updated_at': firestore.SERVER_TIMESTAMP
     })
 

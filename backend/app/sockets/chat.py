@@ -19,7 +19,8 @@ from app.database import (
     get_active_session_for_customer,
     get_all_active_sessions,
     assign_admin_to_session,
-    get_session_messages
+    get_session_messages,
+    reset_admin_unread_count
 )
 from app.services.notifications import send_chat_message_notification
 
@@ -207,6 +208,9 @@ async def admin_join_session(sid, data):
     await sio.enter_room(sid, session_id)
     user_info['session_id'] = session_id
 
+    # Reset admin's unread count for this session
+    reset_admin_unread_count(session_id)
+
     # Get message history
     messages = get_session_messages(session_id)
 
@@ -252,8 +256,8 @@ async def send_message(sid, data):
         content=content
     )
 
-    # Update session last message time
-    update_chat_session_last_message(session_id)
+    # Update session last message time and counters
+    update_chat_session_last_message(session_id, user_info['role'])
 
     # Broadcast to session room
     await sio.emit('new_message', {
@@ -272,7 +276,9 @@ async def send_message(sid, data):
         await sio.emit('session_update', {
             'session_id': session_id,
             'customer_name': session.get('customer_name'),
-            'has_new_message': True
+            'customer_email': session.get('customer_email'),
+            'last_message_at': serialize_firestore_data(session.get('last_message_at')),
+            'unread_count_admin': session.get('unread_count_admin', 0) + 1
         }, room='admins')
 
     # Send push notification if message from admin to customer
@@ -341,7 +347,7 @@ async def send_image(sid, data):
         image_url=image_url
     )
 
-    update_chat_session_last_message(session_id)
+    update_chat_session_last_message(session_id, user_info['role'])
 
     await sio.emit('new_message', {
         'message_id': message['message_id'],
@@ -408,7 +414,7 @@ async def send_location(sid, data):
         location=location
     )
 
-    update_chat_session_last_message(session_id)
+    update_chat_session_last_message(session_id, user_info['role'])
 
     await sio.emit('new_message', {
         'message_id': message['message_id'],
