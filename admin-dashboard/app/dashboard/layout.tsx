@@ -25,11 +25,17 @@ function DashboardLayoutContent({
   // Safely get chat context - returns default values if not ready
   const { totalUnread } = useAdminChat();
 
+  // ALL useEffects must be called before any early returns (Rules of Hooks)
   useEffect(() => {
     if (!loading && !user) {
       router.push('/login');
     }
   }, [user, loading, router]);
+
+  // Close mobile menu when route changes
+  useEffect(() => {
+    setMobileMenuOpen(false);
+  }, [pathname]);
 
   const handleSignOut = async () => {
     await signOut();
@@ -52,11 +58,6 @@ function DashboardLayoutContent({
   }
 
   const isActive = (path: string) => pathname === path;
-
-  // Close mobile menu when route changes
-  useEffect(() => {
-    setMobileMenuOpen(false);
-  }, [pathname]);
 
   return (
     <div className="min-h-screen bg-gray-100">
