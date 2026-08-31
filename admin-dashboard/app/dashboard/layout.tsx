@@ -20,8 +20,10 @@ function DashboardLayoutContent({
   const router = useRouter();
   const pathname = usePathname();
   const { user, loading, signOut } = useAuth();
-  const { totalUnread } = useAdminChat();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  // Safely get chat context - returns default values if not ready
+  const { totalUnread } = useAdminChat();
 
   useEffect(() => {
     if (!loading && !user) {

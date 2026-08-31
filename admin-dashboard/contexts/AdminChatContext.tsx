@@ -254,7 +254,16 @@ export function AdminChatProvider({ children }: { children: React.ReactNode }) {
 export function useAdminChat() {
   const context = useContext(AdminChatContext);
   if (context === undefined) {
-    throw new Error('useAdminChat must be used within AdminChatProvider');
+    // Return default values instead of throwing error during SSR
+    return {
+      socket: null,
+      connected: false,
+      sessions: [],
+      totalUnread: 0,
+      joinSession: () => {},
+      sendMessage: () => {},
+      getSessionMessages: () => [],
+    };
   }
   return context;
 }
