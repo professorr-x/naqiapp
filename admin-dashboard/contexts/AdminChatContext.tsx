@@ -13,6 +13,7 @@ import { io, Socket } from 'socket.io-client';
 
 interface ChatSession {
   session_id: string;
+  customer_uid: string;
   customer_name: string;
   customer_email: string;
   status: string;

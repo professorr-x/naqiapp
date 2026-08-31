@@ -14,6 +14,7 @@ import { io, Socket } from 'socket.io-client';
 
 interface ChatSession {
   session_id: string;
+  customer_uid: string;
   customer_name: string;
   customer_email: string;
   status: string;
@@ -241,17 +242,15 @@ export default function ChatPage() {
     const userId = searchParams.get('userId');
 
     if (userId && sessions.length > 0 && !autoSelectedRef.current && socket) {
-      // Find session for this user (sessions should have customer_email or we can match by user_id in session data)
-      // For now, we'll look for the first session since the backend might need to expose user_id in session data
-      // In a production system, you'd match sessions[i].customer_uid === userId or similar
-
-      // Auto-select the first session for demo purposes
-      // TODO: Backend should include user_id in ChatSession interface to properly match
-      const targetSession = sessions[0];
+      // Find the session that matches the userId
+      const targetSession = sessions.find(session => session.customer_uid === userId);
 
       if (targetSession && !selectedSession) {
         handleJoinSession(targetSession.session_id);
         autoSelectedRef.current = true;
+      } else if (!targetSession && !selectedSession) {
+        // User has no active chat session yet - could show a message or create a new session
+        console.log(`No active chat session found for user ${userId}`);
       }
     }
   }, [sessions, searchParams, socket, selectedSession]);
