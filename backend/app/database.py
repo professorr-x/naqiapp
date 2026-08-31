@@ -277,6 +277,44 @@ def update_order_status(order_id: str, status: str) -> Optional[Dict[str, Any]]:
     return get_order_by_id(order_id)
 
 
+def delete_order(order_id: str) -> Dict[str, int]:
+    """
+    Delete an order and all associated vouchers.
+
+    Args:
+        order_id: The order ID to delete
+
+    Returns:
+        Dict with count of deleted items: {'orders': 1, 'vouchers': N}
+
+    Raises:
+        ValueError: If order not found
+    """
+    db = get_firestore_db()
+    deletion_counts = {'orders': 0, 'vouchers': 0}
+
+    # Verify order exists
+    order_ref = db.collection(ORDERS_COLLECTION).document(order_id)
+    order_doc = order_ref.get()
+
+    if not order_doc.exists:
+        raise ValueError(f"Order {order_id} not found")
+
+    # Delete associated vouchers (cascade)
+    vouchers_ref = db.collection(VOUCHERS_COLLECTION)
+    vouchers_query = vouchers_ref.where('order_id', '==', order_id).stream()
+
+    for voucher_doc in vouchers_query:
+        voucher_doc.reference.delete()
+        deletion_counts['vouchers'] += 1
+
+    # Delete the order
+    order_ref.delete()
+    deletion_counts['orders'] = 1
+
+    return deletion_counts
+
+
 def is_date_disabled(date_str: str) -> Optional[Dict[str, Any]]:
     """Check if a date is disabled"""
     db = get_firestore_db()

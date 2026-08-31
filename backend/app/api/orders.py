@@ -9,7 +9,8 @@ from app.database import (
     get_order_by_id,
     get_orders_by_date,
     update_order_status as update_order_status_db,
-    is_date_disabled
+    is_date_disabled,
+    delete_order
 )
 from app.services.notifications import send_order_status_notification
 import logging
@@ -121,3 +122,45 @@ async def update_order_status_endpoint(order_id: str, status: str):
             print(f"[DEBUG] No user_id for order {order_id}, skipping notification")  # Debug
 
     return {"message": "Status updated", "order": updated_order}
+
+
+@router.delete("/{order_id}", status_code=204)
+async def delete_order_endpoint(
+    order_id: str,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """
+    Delete an order permanently (admin only).
+
+    This will permanently delete the order and all associated vouchers.
+    WARNING: This action cannot be undone.
+    """
+    # Check admin authorization
+    if current_user['role'] != 'admin':
+        raise HTTPException(
+            status_code=403,
+            detail="Admin access required"
+        )
+
+    try:
+        # Delete order and vouchers
+        deletion_counts = delete_order(order_id)
+
+        logger.info(
+            f"Order {order_id} deleted by admin {current_user.get('email')}. "
+            f"Removed: {deletion_counts}"
+        )
+
+        return None  # 204 No Content
+
+    except ValueError as e:
+        raise HTTPException(
+            status_code=404,
+            detail=str(e)
+        )
+    except Exception as e:
+        logger.error(f"Failed to delete order {order_id}: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to delete order: {str(e)}"
+        )
