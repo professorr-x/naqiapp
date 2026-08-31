@@ -212,6 +212,11 @@ async def admin_join_session(sid, data):
     # Reset admin's unread count for this session
     reset_admin_unread_count(session_id)
 
+    # Get updated session data and broadcast to all admins
+    updated_session = get_chat_session(session_id)
+    if updated_session:
+        await sio.emit('session_update', serialize_firestore_data(updated_session), room='admins')
+
     # Get message history
     messages = get_session_messages(session_id)
 
