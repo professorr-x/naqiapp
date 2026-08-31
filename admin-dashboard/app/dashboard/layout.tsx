@@ -167,9 +167,7 @@ function DashboardLayoutContent({
                 Chat
               </div>
               {totalUnread > 0 && (
-                <span className="ml-2 min-w-[20px] h-5 px-1.5 bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center animate-pulse">
-                  {totalUnread > 99 ? '99+' : totalUnread}
-                </span>
+                <span className="ml-2 w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse"></span>
               )}
             </Link>
 
