@@ -377,9 +377,15 @@ export default function ChatPage() {
                         <img src={message.image_url} alt="Shared image" className="rounded max-w-full" />
                       )}
                       {message.message_type === 'location' && message.location && (
-                        <p className="text-sm">
+                        <a
+                          href={`https://www.google.com/maps?q=${message.location.latitude},${message.location.longitude}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-sm underline hover:opacity-80 transition-opacity inline-block"
+                        >
                           📍 Location: {message.location.latitude.toFixed(6)}, {message.location.longitude.toFixed(6)}
-                        </p>
+                          <span className="block text-xs mt-1 opacity-75">Click to view on Google Maps</span>
+                        </a>
                       )}
                       <p className="text-xs opacity-75 mt-1">
                         {new Date(message.created_at).toLocaleTimeString()}
