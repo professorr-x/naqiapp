@@ -45,7 +45,10 @@ interface AdminChatContextType {
 const AdminChatContext = createContext<AdminChatContextType | undefined>(undefined);
 
 export function AdminChatProvider({ children }: { children: React.ReactNode }) {
-  const { user, getIdToken } = useAuth();
+  const authContext = useAuth();
+  const user = authContext?.user;
+  const getIdToken = authContext?.getIdToken;
+
   const [socket, setSocket] = useState<Socket | null>(null);
   const [connected, setConnected] = useState(false);
   const [sessions, setSessions] = useState<ChatSession[]>([]);
@@ -105,11 +108,12 @@ export function AdminChatProvider({ children }: { children: React.ReactNode }) {
 
   // Initialize persistent socket connection
   useEffect(() => {
-    if (!user) return;
+    if (!user || !getIdToken) return;
 
     const initSocket = async () => {
-      const token = await getIdToken();
-      if (!token) return;
+      try {
+        const token = await getIdToken();
+        if (!token) return;
 
       const socketUrl = process.env.NEXT_PUBLIC_API_BASE_URL?.replace('/api', '') || 'http://localhost:8000';
       const socketInstance = io(socketUrl, {
@@ -195,9 +199,12 @@ export function AdminChatProvider({ children }: { children: React.ReactNode }) {
       setSocket(socketInstance);
 
       // Don't disconnect on cleanup - keep connection alive
-      return () => {
-        // socketInstance.disconnect();
-      };
+        return () => {
+          // socketInstance.disconnect();
+        };
+      } catch (error) {
+        console.error('[AdminChat] Failed to initialize socket:', error);
+      }
     };
 
     initSocket();
