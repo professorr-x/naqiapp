@@ -6,7 +6,7 @@
  * Protected layout with sidebar navigation for admin pages.
  */
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
@@ -19,6 +19,7 @@ export default function DashboardLayout({
   const router = useRouter();
   const pathname = usePathname();
   const { user, loading, signOut } = useAuth();
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useEffect(() => {
     if (!loading && !user) {
@@ -48,15 +49,67 @@ export default function DashboardLayout({
 
   const isActive = (path: string) => pathname === path;
 
+  // Close mobile menu when route changes
+  useEffect(() => {
+    setMobileMenuOpen(false);
+  }, [pathname]);
+
   return (
     <div className="min-h-screen bg-gray-100">
+      {/* Mobile Menu Button */}
+      <div className="lg:hidden fixed top-0 left-0 right-0 bg-white border-b border-gray-200 z-30">
+        <div className="flex items-center justify-between px-4 py-3">
+          <h1 className="text-lg font-bold text-primary">NAQI Admin</h1>
+          <button
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            className="p-2 rounded-lg text-gray-700 hover:bg-gray-100"
+          >
+            <svg
+              className="w-6 h-6"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              {mobileMenuOpen ? (
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M6 18L18 6M6 6l12 12"
+                />
+              ) : (
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M4 6h16M4 12h16M4 18h16"
+                />
+              )}
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      {/* Mobile Menu Overlay */}
+      {mobileMenuOpen && (
+        <div
+          className="lg:hidden fixed inset-0 bg-black bg-opacity-50 z-40"
+          onClick={() => setMobileMenuOpen(false)}
+        />
+      )}
+
       {/* Sidebar */}
-      <div className="fixed inset-y-0 left-0 w-64 bg-white shadow-lg">
+      <div className={`fixed inset-y-0 left-0 w-64 bg-white shadow-lg z-50 transform transition-transform duration-300 ease-in-out lg:translate-x-0 ${
+        mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
+      }`}>
         <div className="flex flex-col h-full">
-          {/* Logo */}
-          <div className="flex items-center justify-center h-16 border-b border-gray-200">
+          {/* Logo - Hidden on mobile since it's in the header */}
+          <div className="hidden lg:flex items-center justify-center h-16 border-b border-gray-200">
             <h1 className="text-xl font-bold text-primary">NAQI Admin</h1>
           </div>
+
+          {/* Mobile Header Spacer */}
+          <div className="lg:hidden h-4"></div>
 
           {/* Navigation */}
           <nav className="flex-1 px-4 py-6 space-y-2">
@@ -194,7 +247,7 @@ export default function DashboardLayout({
       </div>
 
       {/* Main content */}
-      <div className="ml-64 p-8">
+      <div className="lg:ml-64 pt-16 lg:pt-0 p-4 md:p-6 lg:p-8">
         {children}
       </div>
     </div>

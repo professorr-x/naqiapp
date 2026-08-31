@@ -235,12 +235,12 @@ export default function AdminUsersPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 md:space-y-6">
       {/* Header */}
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Admin Users</h1>
-          <p className="text-gray-600 mt-1">Manage admin users and permissions</p>
+          <h1 className="text-xl md:text-2xl font-bold text-gray-900">Admin Users</h1>
+          <p className="text-sm md:text-base text-gray-600 mt-1">Manage admin users and permissions</p>
         </div>
         <div className="text-sm text-gray-500">
           Total Admins: <span className="font-semibold text-gray-900">{admins.length}</span>
@@ -248,32 +248,32 @@ export default function AdminUsersPage() {
       </div>
 
       {/* Add Admin by Phone Number Section */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">Add Admin User</h2>
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 md:p-6">
+        <h2 className="text-base md:text-lg font-semibold text-gray-900 mb-4">Add Admin User</h2>
         <form onSubmit={handleAddAdminByPhone} className="space-y-4">
           <div>
             <label htmlFor="phoneNumber" className="block text-sm font-medium text-gray-700 mb-2">
               Phone Number
             </label>
-            <div className="flex gap-3">
+            <div className="flex flex-col sm:flex-row gap-3">
               <input
                 type="tel"
                 id="phoneNumber"
                 value={phoneNumber}
                 onChange={(e) => setPhoneNumber(e.target.value)}
                 placeholder="Enter phone number (e.g., +1234567890)"
-                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base"
                 disabled={searchLoading}
               />
               <button
                 type="submit"
                 disabled={searchLoading}
-                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+                className="w-full sm:w-auto px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed font-medium"
               >
                 {searchLoading ? 'Searching...' : 'Add Admin'}
               </button>
             </div>
-            <p className="text-sm text-gray-500 mt-2">
+            <p className="text-xs md:text-sm text-gray-500 mt-2">
               Search for a user by phone number and promote them to admin role
             </p>
           </div>
@@ -292,8 +292,8 @@ export default function AdminUsersPage() {
         </form>
       </div>
 
-      {/* Admins Table */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+      {/* Admins Table - Desktop */}
+      <div className="hidden md:block bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead className="bg-gray-50 border-b border-gray-200">
@@ -416,31 +416,131 @@ export default function AdminUsersPage() {
         </div>
       </div>
 
+      {/* Admins List - Mobile */}
+      <div className="md:hidden space-y-3">
+        {admins.length === 0 ? (
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-8 text-center text-gray-500">
+            No admin users found
+          </div>
+        ) : (
+          admins.map((admin) => (
+            <div key={admin.id} className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+              <div className="flex items-start gap-3 mb-3">
+                <div className="h-12 w-12 flex-shrink-0 rounded-full bg-blue-500 flex items-center justify-center">
+                  <span className="text-white font-medium">
+                    {getInitials(admin.display_name, admin.email)}
+                  </span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="text-sm font-semibold text-gray-900 truncate">
+                    {admin.display_name || 'No name'}
+                  </h3>
+                  <p className="text-xs text-gray-500 font-mono truncate">
+                    {admin.firebase_uid}
+                  </p>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span
+                      className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                        admin.is_active
+                          ? 'bg-green-100 text-green-800'
+                          : 'bg-red-100 text-red-800'
+                      }`}
+                    >
+                      {admin.is_active ? 'Active' : 'Disabled'}
+                    </span>
+                    {admin.firebase_uid === user?.uid && (
+                      <span className="text-xs text-gray-400">(You)</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-2 text-sm border-t border-gray-100 pt-3">
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Email:</span>
+                  <span className="text-gray-900 font-medium truncate ml-2">
+                    {admin.email || 'N/A'}
+                  </span>
+                </div>
+                {admin.email && (
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Email Status:</span>
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                        admin.email_verified
+                          ? 'bg-green-100 text-green-800'
+                          : 'bg-yellow-100 text-yellow-800'
+                      }`}
+                    >
+                      {admin.email_verified ? 'Verified' : 'Unverified'}
+                    </span>
+                  </div>
+                )}
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Phone:</span>
+                  <span className="text-gray-900 font-medium">{admin.phone_number || 'N/A'}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Joined:</span>
+                  <span className="text-gray-900 font-medium">{formatDate(admin.created_at)}</span>
+                </div>
+              </div>
+
+              {admin.firebase_uid !== user?.uid && (
+                <div className="flex gap-2 mt-4 border-t border-gray-100 pt-3">
+                  <button
+                    onClick={() => handleToggleStatus(admin)}
+                    disabled={toggleLoading === admin.firebase_uid}
+                    className={`flex-1 px-4 py-2.5 rounded-lg font-medium text-sm ${
+                      admin.is_active
+                        ? 'bg-yellow-100 text-yellow-700 active:bg-yellow-200'
+                        : 'bg-green-100 text-green-700 active:bg-green-200'
+                    } disabled:opacity-50`}
+                  >
+                    {toggleLoading === admin.firebase_uid
+                      ? 'Loading...'
+                      : admin.is_active
+                      ? 'Disable'
+                      : 'Enable'}
+                  </button>
+                  <button
+                    onClick={() => handleDeleteClick(admin)}
+                    className="flex-1 px-4 py-2.5 rounded-lg bg-red-100 text-red-700 active:bg-red-200 font-medium text-sm"
+                  >
+                    Delete
+                  </button>
+                </div>
+              )}
+            </div>
+          ))
+        )}
+      </div>
+
       {/* Delete Confirmation Modal */}
       {showDeleteConfirm && adminToDelete && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">Delete Admin User</h3>
-            <p className="text-gray-600 mb-4">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg p-4 md:p-6 max-w-md w-full">
+            <h3 className="text-base md:text-lg font-semibold text-gray-900 mb-2">Delete Admin User</h3>
+            <p className="text-sm md:text-base text-gray-600 mb-4">
               Are you sure you want to delete{' '}
               <strong>{adminToDelete.display_name || adminToDelete.email}</strong>? This will
               remove their admin privileges and may delete their account.
             </p>
-            <div className="flex justify-end gap-3">
+            <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 sm:gap-3">
               <button
                 onClick={() => {
                   setShowDeleteConfirm(false);
                   setAdminToDelete(null);
                 }}
                 disabled={deleting}
-                className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                className="w-full sm:w-auto px-4 py-2.5 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 active:bg-gray-100 disabled:opacity-50 font-medium"
               >
                 Cancel
               </button>
               <button
                 onClick={handleDeleteConfirm}
                 disabled={deleting}
-                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
+                className="w-full sm:w-auto px-4 py-2.5 bg-red-600 text-white rounded-lg hover:bg-red-700 active:bg-red-800 disabled:opacity-50 font-medium"
               >
                 {deleting ? 'Deleting...' : 'Delete'}
               </button>
