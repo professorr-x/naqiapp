@@ -7,6 +7,7 @@
  * - View all users in a table
  * - Message users via chat
  * - Delete users with confirmation
+ * - Multi-select users for bulk deletion
  */
 
 import { useEffect, useState } from 'react';
@@ -34,9 +35,10 @@ export default function UsersPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [deletingUserId, setDeletingUserId] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [userToDelete, setUserToDelete] = useState<User | null>(null);
+  const [selectedUsers, setSelectedUsers] = useState<Set<string>>(new Set());
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Fetch all users
   const fetchUsers = async () => {
@@ -78,39 +80,78 @@ export default function UsersPage() {
     setShowDeleteConfirm(true);
   };
 
-  // Confirm delete user
-  const confirmDeleteUser = async () => {
-    if (!userToDelete) return;
-
-    try {
-      setDeletingUserId(userToDelete.firebase_uid);
-      const token = await getIdToken();
-
-      await axios.delete(
-        `${process.env.NEXT_PUBLIC_API_BASE_URL}/users/${userToDelete.firebase_uid}`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      );
-
-      // Remove user from list
-      setUsers(users.filter(u => u.firebase_uid !== userToDelete.firebase_uid));
-      setShowDeleteConfirm(false);
-      setUserToDelete(null);
-    } catch (err: any) {
-      console.error('Error deleting user:', err);
-      alert(err.response?.data?.detail || 'Failed to delete user');
-    } finally {
-      setDeletingUserId(null);
-    }
+  // Confirm delete user (now uses bulk delete logic)
+  const confirmDeleteUser = () => {
+    confirmBulkDelete();
   };
 
   // Cancel delete
   const cancelDelete = () => {
     setShowDeleteConfirm(false);
     setUserToDelete(null);
+  };
+
+  // Toggle user selection
+  const toggleUserSelection = (userId: string) => {
+    const newSelected = new Set(selectedUsers);
+    if (newSelected.has(userId)) {
+      newSelected.delete(userId);
+    } else {
+      newSelected.add(userId);
+    }
+    setSelectedUsers(newSelected);
+  };
+
+  // Toggle all users selection
+  const toggleAllUsers = () => {
+    if (selectedUsers.size === users.length) {
+      setSelectedUsers(new Set());
+    } else {
+      setSelectedUsers(new Set(users.map(u => u.firebase_uid)));
+    }
+  };
+
+  // Handle bulk delete
+  const handleBulkDelete = () => {
+    if (selectedUsers.size === 0) return;
+    setShowDeleteConfirm(true);
+  };
+
+  // Confirm bulk delete
+  const confirmBulkDelete = async () => {
+    const usersToDelete = selectedUsers.size > 0 ? Array.from(selectedUsers) : (userToDelete ? [userToDelete.firebase_uid] : []);
+
+    if (usersToDelete.length === 0) return;
+
+    try {
+      setIsDeleting(true);
+      const token = await getIdToken();
+
+      // Delete users in parallel
+      await Promise.all(
+        usersToDelete.map(userId =>
+          axios.delete(
+            `${process.env.NEXT_PUBLIC_API_BASE_URL}/users/${userId}`,
+            {
+              headers: {
+                Authorization: `Bearer ${token}`,
+              },
+            }
+          )
+        )
+      );
+
+      // Remove deleted users from list
+      setUsers(users.filter(u => !usersToDelete.includes(u.firebase_uid)));
+      setSelectedUsers(new Set());
+      setShowDeleteConfirm(false);
+      setUserToDelete(null);
+    } catch (err: any) {
+      console.error('Error deleting users:', err);
+      alert(err.response?.data?.detail || 'Failed to delete users');
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   if (loading) {
@@ -146,14 +187,45 @@ export default function UsersPage() {
       <div className="flex justify-between items-center mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Users</h1>
-          <p className="text-gray-600 mt-1">{users.length} total users</p>
+          <p className="text-gray-600 mt-1">
+            {users.length} total users
+            {selectedUsers.size > 0 && (
+              <span className="ml-2 text-blue-600 font-medium">
+                ({selectedUsers.size} selected)
+              </span>
+            )}
+          </p>
         </div>
-        <button
-          onClick={fetchUsers}
-          className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
-        >
-          Refresh
-        </button>
+        <div className="flex gap-2">
+          {selectedUsers.size > 0 && (
+            <button
+              onClick={handleBulkDelete}
+              disabled={isDeleting}
+              className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            >
+              <svg
+                className="w-4 h-4"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                />
+              </svg>
+              Delete {selectedUsers.size} user{selectedUsers.size > 1 ? 's' : ''}
+            </button>
+          )}
+          <button
+            onClick={fetchUsers}
+            className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+          >
+            Refresh
+          </button>
+        </div>
       </div>
 
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
@@ -161,6 +233,15 @@ export default function UsersPage() {
           <table className="w-full">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
+                <th className="px-6 py-3 text-left">
+                  <input
+                    type="checkbox"
+                    checked={users.length > 0 && selectedUsers.size === users.length}
+                    onChange={toggleAllUsers}
+                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 cursor-pointer"
+                    title="Select all users"
+                  />
+                </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   User
                 </th>
@@ -187,6 +268,14 @@ export default function UsersPage() {
             <tbody className="bg-white divide-y divide-gray-200">
               {users.map((user) => (
                 <tr key={user.firebase_uid} className="hover:bg-gray-50">
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <input
+                      type="checkbox"
+                      checked={selectedUsers.has(user.firebase_uid)}
+                      onChange={() => toggleUserSelection(user.firebase_uid)}
+                      className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 cursor-pointer"
+                    />
+                  </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex items-center">
                       <div className="flex-shrink-0 h-10 w-10 bg-blue-100 rounded-full flex items-center justify-center">
@@ -267,7 +356,7 @@ export default function UsersPage() {
                     </button>
                     <button
                       onClick={() => handleDeleteClick(user)}
-                      disabled={deletingUserId === user.firebase_uid}
+                      disabled={isDeleting}
                       className="inline-flex items-center px-3 py-1.5 bg-red-500 text-white rounded-md hover:bg-red-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                       title="Delete user"
                     >
@@ -284,7 +373,7 @@ export default function UsersPage() {
                           d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
                         />
                       </svg>
-                      {deletingUserId === user.firebase_uid ? 'Deleting...' : 'Delete'}
+                      Delete
                     </button>
                   </td>
                 </tr>
@@ -301,7 +390,7 @@ export default function UsersPage() {
       </div>
 
       {/* Delete Confirmation Modal */}
-      {showDeleteConfirm && userToDelete && (
+      {showDeleteConfirm && (selectedUsers.size > 0 || userToDelete) && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg shadow-xl p-6 max-w-md w-full mx-4">
             <div className="flex items-center justify-center w-12 h-12 bg-red-100 rounded-full mx-auto mb-4">
@@ -320,25 +409,33 @@ export default function UsersPage() {
               </svg>
             </div>
             <h3 className="text-lg font-semibold text-gray-900 text-center mb-2">
-              Delete User
+              Delete User{selectedUsers.size > 1 ? 's' : ''}
             </h3>
             <p className="text-gray-600 text-center mb-6">
-              Are you sure you want to delete <strong>{userToDelete.display_name || userToDelete.email}</strong>? This action cannot be undone.
+              {selectedUsers.size > 0 ? (
+                <>
+                  Are you sure you want to delete <strong>{selectedUsers.size}</strong> user{selectedUsers.size > 1 ? 's' : ''}? This action cannot be undone.
+                </>
+              ) : userToDelete ? (
+                <>
+                  Are you sure you want to delete <strong>{userToDelete.display_name || userToDelete.email}</strong>? This action cannot be undone.
+                </>
+              ) : null}
             </p>
             <div className="flex gap-3">
               <button
                 onClick={cancelDelete}
-                disabled={deletingUserId !== null}
+                disabled={isDeleting}
                 className="flex-1 px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 transition-colors disabled:opacity-50"
               >
                 Cancel
               </button>
               <button
                 onClick={confirmDeleteUser}
-                disabled={deletingUserId !== null}
+                disabled={isDeleting}
                 className="flex-1 px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors disabled:opacity-50"
               >
-                {deletingUserId ? 'Deleting...' : 'Delete'}
+                {isDeleting ? 'Deleting...' : 'Delete'}
               </button>
             </div>
           </div>
