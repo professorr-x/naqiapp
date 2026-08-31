@@ -44,6 +44,61 @@ export default function ChatPage() {
   const [connected, setConnected] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const autoSelectedRef = useRef(false);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const selectedSessionRef = useRef<string | null>(null);
+
+  // Keep ref in sync with state
+  useEffect(() => {
+    selectedSessionRef.current = selectedSession;
+  }, [selectedSession]);
+
+  // Request notification permission on mount
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      if (Notification.permission === 'default') {
+        Notification.requestPermission();
+      }
+    }
+  }, []);
+
+  // Play notification sound
+  const playNotificationSound = () => {
+    try {
+      if (!audioContextRef.current) {
+        audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+      }
+
+      const context = audioContextRef.current;
+      const oscillator = context.createOscillator();
+      const gainNode = context.createGain();
+
+      oscillator.connect(gainNode);
+      gainNode.connect(context.destination);
+
+      oscillator.frequency.value = 800;
+      oscillator.type = 'sine';
+
+      gainNode.gain.setValueAtTime(0.3, context.currentTime);
+      gainNode.gain.exponentialRampToValueAtTime(0.01, context.currentTime + 0.2);
+
+      oscillator.start(context.currentTime);
+      oscillator.stop(context.currentTime + 0.2);
+    } catch (error) {
+      console.error('Failed to play notification sound:', error);
+    }
+  };
+
+  // Show browser notification
+  const showNotification = (title: string, body: string) => {
+    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+      new Notification(title, {
+        body,
+        icon: '/favicon.ico',
+        tag: 'chat-notification',
+      });
+    }
+    playNotificationSound();
+  };
 
   // Scroll to bottom of messages
   const scrollToBottom = () => {
@@ -53,6 +108,21 @@ export default function ChatPage() {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  // Update page title with unread count
+  useEffect(() => {
+    const totalUnread = sessions.reduce((sum, session) => sum + (session.unread_count_admin || 0), 0);
+
+    if (totalUnread > 0) {
+      document.title = `(${totalUnread}) Chat - Admin Dashboard`;
+    } else {
+      document.title = 'Chat - Admin Dashboard';
+    }
+
+    return () => {
+      document.title = 'Admin Dashboard';
+    };
+  }, [sessions]);
 
   // Initialize socket connection
   useEffect(() => {
@@ -90,13 +160,32 @@ export default function ChatPage() {
       // Session update notification
       socketInstance.on('session_update', (data: Partial<ChatSession>) => {
         console.log('Session update:', data);
-        setSessions((prev) =>
-          prev.map((session) =>
-            session.session_id === data.session_id
-              ? { ...session, ...data }
-              : session
-          )
-        );
+
+        // Show notification for new messages from other sessions
+        if (data.unread_count_admin && data.unread_count_admin > 0) {
+          // Only notify if not viewing this session or tab is not focused
+          if (data.session_id !== selectedSessionRef.current || document.hidden) {
+            showNotification(
+              `New message from ${data.customer_name || 'Customer'}`,
+              data.customer_email || 'New chat message received'
+            );
+          }
+        }
+
+        setSessions((prev) => {
+          const existingSession = prev.find(s => s.session_id === data.session_id);
+          if (existingSession) {
+            // Update existing session
+            return prev.map((session) =>
+              session.session_id === data.session_id
+                ? { ...session, ...data }
+                : session
+            );
+          } else {
+            // Add new session to list
+            return [...prev, data as ChatSession];
+          }
+        });
       });
 
       // Joined a specific session
@@ -108,6 +197,17 @@ export default function ChatPage() {
       // New message received
       socketInstance.on('new_message', (message: Message) => {
         console.log('New message:', message);
+
+        // Only show notification if message is from customer and tab is not focused
+        if (message.sender_role === 'user' && document.hidden) {
+          showNotification(
+            `${message.sender_name}`,
+            message.message_type === 'text' ? message.content || 'New message' :
+            message.message_type === 'image' ? 'Sent an image' :
+            message.message_type === 'location' ? 'Shared a location' : 'New message'
+          );
+        }
+
         setMessages((prev) => [...prev, message]);
       });
 
