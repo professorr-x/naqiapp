@@ -7,7 +7,7 @@
  * Uses Socket.IO with admin_join and admin_join_session events.
  */
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { io, Socket } from 'socket.io-client';
@@ -49,6 +49,7 @@ export default function ChatPage() {
   const autoSelectedRef = useRef(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const selectedSessionRef = useRef<string | null>(null);
+  const sessionsLoadedRef = useRef(false); // Track if sessions have been initially loaded
 
   // Keep ref in sync with state
   useEffect(() => {
@@ -134,6 +135,25 @@ export default function ChatPage() {
     };
   }, [sessions]);
 
+  // Join a session (memoized to prevent unnecessary re-renders)
+  const handleJoinSession = useCallback((sessionId: string) => {
+    if (!socket) return;
+
+    setSelectedSession(sessionId);
+    setMessages([]);
+
+    // Reset unread count for this session in UI
+    setSessions((prev) =>
+      prev.map((session) =>
+        session.session_id === sessionId
+          ? { ...session, unread_count_admin: 0 }
+          : session
+      )
+    );
+
+    socket.emit('admin_join_session', { session_id: sessionId });
+  }, [socket]);
+
   // Initialize socket connection
   useEffect(() => {
     if (!user) return;
@@ -165,6 +185,7 @@ export default function ChatPage() {
       socketInstance.on('admin_sessions', (data: { sessions: ChatSession[] }) => {
         console.log('Active sessions:', data.sessions);
         setSessions(data.sessions);
+        sessionsLoadedRef.current = true; // Mark that sessions have been loaded
       });
 
       // Session update notification
@@ -217,8 +238,8 @@ export default function ChatPage() {
           return prev;
         });
 
-        // Auto-join the session
-        if (!selectedSession) {
+        // Auto-join the session (use ref to avoid stale closure)
+        if (!selectedSessionRef.current) {
           handleJoinSession(data.session.session_id);
           autoSelectedRef.current = true;
         }
@@ -261,41 +282,24 @@ export default function ChatPage() {
   useEffect(() => {
     const userId = searchParams.get('userId');
 
-    if (userId && !autoSelectedRef.current && socket) {
+    // Only proceed if we have userId, socket is connected, and sessions have been loaded
+    if (userId && !autoSelectedRef.current && socket && sessionsLoadedRef.current) {
       // Find the session that matches the userId
       const targetSession = sessions.find(session => session.customer_uid === userId);
 
       if (targetSession && !selectedSession) {
         // Session exists, join it
+        console.log(`Found existing session for user ${userId}, joining...`);
         handleJoinSession(targetSession.session_id);
         autoSelectedRef.current = true;
-      } else if (!targetSession && !selectedSession && sessions.length >= 0) {
-        // No session found - request backend to get or create one
-        console.log(`Requesting session for user ${userId}`);
+      } else if (!targetSession && !selectedSession) {
+        // No session found after sessions loaded - request backend to get or create one
+        console.log(`No existing session for user ${userId}, requesting creation...`);
         socket.emit('admin_get_or_create_session', { customer_uid: userId });
         autoSelectedRef.current = true; // Set to prevent repeated requests
       }
     }
-  }, [sessions, searchParams, socket, selectedSession]);
-
-  // Join a session
-  const handleJoinSession = (sessionId: string) => {
-    if (!socket) return;
-
-    setSelectedSession(sessionId);
-    setMessages([]);
-
-    // Reset unread count for this session in UI
-    setSessions((prev) =>
-      prev.map((session) =>
-        session.session_id === sessionId
-          ? { ...session, unread_count_admin: 0 }
-          : session
-      )
-    );
-
-    socket.emit('admin_join_session', { session_id: sessionId });
-  };
+  }, [sessions, searchParams, socket, selectedSession, handleJoinSession]);
 
   // Send message
   const handleSendMessage = () => {
