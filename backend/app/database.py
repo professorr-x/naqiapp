@@ -1142,6 +1142,25 @@ def get_active_session_for_customer(customer_uid: str) -> Optional[Dict[str, Any
     return None
 
 
+def get_or_create_session_for_customer(customer_uid: str) -> Dict[str, Any]:
+    """Get or create a chat session for a customer."""
+    # First try to get existing active session
+    existing_session = get_active_session_for_customer(customer_uid)
+    if existing_session:
+        return existing_session
+
+    # If no session exists, create one
+    # Get customer info from users collection
+    user = get_user_by_firebase_uid(customer_uid)
+    if not user:
+        raise ValueError(f"User not found: {customer_uid}")
+
+    customer_name = user.get('display_name', 'Customer')
+    customer_email = user.get('email', '')
+
+    return create_chat_session(customer_uid, customer_name, customer_email)
+
+
 def get_all_active_sessions() -> List[Dict[str, Any]]:
     """Get all active sessions that have at least one message."""
     db = get_firestore_db()

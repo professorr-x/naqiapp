@@ -204,6 +204,26 @@ export default function ChatPage() {
         setMessages(data.messages);
       });
 
+      // Session created or found (for admin-initiated chats)
+      socketInstance.on('session_created_or_found', (data: { session: ChatSession }) => {
+        console.log('Session created or found:', data.session);
+
+        // Add session to list if not already there
+        setSessions((prev) => {
+          const exists = prev.find(s => s.session_id === data.session.session_id);
+          if (!exists) {
+            return [...prev, data.session];
+          }
+          return prev;
+        });
+
+        // Auto-join the session
+        if (!selectedSession) {
+          handleJoinSession(data.session.session_id);
+          autoSelectedRef.current = true;
+        }
+      });
+
       // New message received
       socketInstance.on('new_message', (message: Message) => {
         console.log('New message:', message);
@@ -241,16 +261,19 @@ export default function ChatPage() {
   useEffect(() => {
     const userId = searchParams.get('userId');
 
-    if (userId && sessions.length > 0 && !autoSelectedRef.current && socket) {
+    if (userId && !autoSelectedRef.current && socket) {
       // Find the session that matches the userId
       const targetSession = sessions.find(session => session.customer_uid === userId);
 
       if (targetSession && !selectedSession) {
+        // Session exists, join it
         handleJoinSession(targetSession.session_id);
         autoSelectedRef.current = true;
-      } else if (!targetSession && !selectedSession) {
-        // User has no active chat session yet - could show a message or create a new session
-        console.log(`No active chat session found for user ${userId}`);
+      } else if (!targetSession && !selectedSession && sessions.length >= 0) {
+        // No session found - request backend to get or create one
+        console.log(`Requesting session for user ${userId}`);
+        socket.emit('admin_get_or_create_session', { customer_uid: userId });
+        autoSelectedRef.current = true; // Set to prevent repeated requests
       }
     }
   }, [sessions, searchParams, socket, selectedSession]);

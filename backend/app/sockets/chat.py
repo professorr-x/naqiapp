@@ -17,6 +17,7 @@ from app.database import (
     get_user_by_firebase_uid,
     get_user_role,
     get_active_session_for_customer,
+    get_or_create_session_for_customer,
     get_all_active_sessions,
     assign_admin_to_session,
     get_session_messages,
@@ -219,6 +220,40 @@ async def admin_join_session(sid, data):
         'status': session['status'],
         'messages': serialize_firestore_data(messages)
     }, room=sid)
+
+
+@sio.event
+async def admin_get_or_create_session(sid, data):
+    """Admin gets or creates a chat session for a specific customer."""
+    if sid not in connected_users:
+        await sio.emit('error', {'message': 'Not authenticated'}, room=sid)
+        return
+
+    user_info = connected_users[sid]
+
+    if user_info['role'] != 'admin':
+        await sio.emit('error', {'message': 'Admin access required'}, room=sid)
+        return
+
+    customer_uid = data.get('customer_uid')
+    if not customer_uid:
+        await sio.emit('error', {'message': 'customer_uid required'}, room=sid)
+        return
+
+    try:
+        # Get or create session for this customer
+        session = get_or_create_session_for_customer(customer_uid)
+
+        # Return the session info
+        await sio.emit('session_created_or_found', {
+            'session': serialize_firestore_data(session)
+        }, room=sid)
+
+    except ValueError as e:
+        await sio.emit('error', {'message': str(e)}, room=sid)
+    except Exception as e:
+        print(f"[ERROR] Failed to get/create session: {str(e)}")
+        await sio.emit('error', {'message': 'Failed to get or create session'}, room=sid)
 
 
 @sio.event
