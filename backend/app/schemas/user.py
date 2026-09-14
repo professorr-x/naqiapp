@@ -26,7 +26,6 @@ class UserResponse(UserBase):
 
 
 class UpdateUserRoleRequest(BaseModel):
-    firebase_uid: str
     role: str  # "user" or "admin"
 
 
